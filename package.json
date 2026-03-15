@@ -1,0 +1,15 @@
+{
+  "name": "hono-bun-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts"
+  },
+  "dependencies": {
+    "hono": "^4.12.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
+  }
+}
