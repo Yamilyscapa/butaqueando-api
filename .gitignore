@@ -1,11 +1,12 @@
-# dependencies
-node_modules/
-
 # build output
+bin/
 dist/
 build/
 coverage/
-*.tsbuildinfo
+*.test
+
+# cache
+.cache/
 
 # environment files
 .env
@@ -14,7 +15,6 @@ coverage/
 
 # logs
 *.log
-bun-debug.log*
 
 # editor and OS files
 .DS_Store
