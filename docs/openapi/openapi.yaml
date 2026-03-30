@@ -1,0 +1,657 @@
+openapi: 3.0.3
+info:
+  title: Butaqueando API
+  version: 0.1.0
+  description: |
+    Backend API for Butaqueando.
+
+    This document currently describes endpoints that are already implemented and
+    stable in the codebase:
+    - system root
+    - health/readiness
+    - auth (sign-up, sign-in, refresh, sign-out)
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: system
+  - name: health
+  - name: auth
+
+paths:
+  /:
+    get:
+      tags: [system]
+      summary: Root status endpoint
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: API is reachable
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootSuccessEnvelope'
+              examples:
+                ok:
+                  value:
+                    data:
+                      name: butaqueando-api
+                      status: ok
+                    error: null
+                    requestId: req-2d522c7f73a64f2a8f72d6a8575567b0
+
+  /v1/health:
+    get:
+      tags: [health]
+      summary: Readiness health check
+      description: |
+        Returns service readiness. If dependencies are unavailable, responds with
+        a standardized error envelope.
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: Service is healthy
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthSuccessEnvelope'
+              examples:
+                healthy:
+                  value:
+                    data:
+                      ok: true
+                      database: true
+                      timestamp: '2026-03-29T21:15:50.123456789Z'
+                    error: null
+                    requestId: req-f3fc79d4f9f2488dbf618dbf0d4347df
+        '503':
+          description: Service unavailable
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unavailable:
+                  value:
+                    data: null
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: service unavailable
+                      details:
+                        database: false
+                    requestId: req-99d4f39646e94d65bd5ac744cf8a6c89
+
+  /v1/auth/sign-up:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      description: |
+        Creates a pending user account and an email verification token.
+
+        Behavior notes:
+        - `verificationToken` is exposed only outside production.
+        - `emailVerificationRequired` reflects the runtime flag
+          `EMAIL_VERIFICATION_REQUIRED`.
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+            examples:
+              default:
+                value:
+                  displayName: Ana Torres
+                  email: ana@example.com
+                  password: password123
+      responses:
+        '201':
+          description: User created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignUpSuccessEnvelope'
+              examples:
+                devBypassOff:
+                  summary: Verification required
+                  value:
+                    data:
+                      userId: 0f36ccde-34c7-4470-b4db-3b7f8ff7f61b
+                      email: ana@example.com
+                      emailVerificationRequired: true
+                    error: null
+                    requestId: req-7f6c1ff7e8154e3d9e541c74afae5688
+                devBypassOn:
+                  summary: Verification bypassed in development
+                  value:
+                    data:
+                      userId: a3a4de52-2cc0-4af7-bbdb-3ee94f75d6b9
+                      email: ana@example.com
+                      emailVerificationRequired: false
+                      verificationToken: m_5KAjfM4lA6cQdA2adQEcZDYMT1cA1q8Sz7sA4laLk
+                    error: null
+                    requestId: req-57f50bd39da3408faaf4f9ecb0527d4a
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email already in use
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                duplicate:
+                  value:
+                    data: null
+                    error:
+                      code: EMAIL_ALREADY_IN_USE
+                      message: email already in use
+                    requestId: req-0a087b5afba54c8f8d9f87fd41ad2f48
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/sign-in:
+    post:
+      tags: [auth]
+      summary: Sign in with email and password
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+            examples:
+              default:
+                value:
+                  email: ana@example.com
+                  password: password123
+      responses:
+        '200':
+          description: Authentication successful
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      tokenType: Bearer
+                      accessToken: <SECRET>
+                      refreshToken: <SECRET>
+                      accessTokenExpiresIn: 900
+                      refreshTokenExpiresIn: 2592000
+                      user:
+                        id: 00000000-0000-0000-0000-000000000002
+                        displayName: Ana Torres
+                        email: ana@example.com
+                        role: user
+                    error: null
+                    requestId: req-b2ce64582a3f46d1868b78ca20af2e2a
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Email verification required
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unverified:
+                  value:
+                    data: null
+                    error:
+                      code: EMAIL_NOT_VERIFIED
+                      message: email must be verified before signing in
+                    requestId: req-81e64d45ca9b4fd1a59c674dc5fb9d92
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate refresh token and issue a new token pair
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token pair refreshed
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/sign-out:
+    post:
+      tags: [auth]
+      summary: Revoke the provided refresh token
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignOutRequest'
+      responses:
+        '200':
+          description: Sign-out successful
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignOutSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      ok: true
+                    error: null
+                    requestId: req-58c9b298f5c4441d8c4879dad938b0e4
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    XRequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Optional request correlation ID. If omitted, the server generates one.
+      schema:
+        type: string
+
+  headers:
+    XRequestID:
+      description: Request correlation ID.
+      schema:
+        type: string
+
+  responses:
+    ValidationError:
+      description: Request validation failed
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            invalidPayload:
+              value:
+                data: null
+                error:
+                  code: VALIDATION_ERROR
+                  message: invalid request body
+                  details:
+                    cause: "field validation failed"
+                requestId: req-95f3450f38c9498cb4fc7c882f69fa4f
+
+    Unauthorized:
+      description: Invalid authentication credentials or token
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unauthorized:
+              value:
+                data: null
+                error:
+                  code: UNAUTHORIZED
+                  message: invalid email or password
+                requestId: req-8eb90f4f5a9f4f7f895243f37d5dc9c6
+
+    RateLimited:
+      description: Too many requests
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            limitExceeded:
+              value:
+                data: null
+                error:
+                  code: RATE_LIMITED
+                  message: too many requests
+                  details:
+                    limit: 15
+                    windowSeconds: 60
+                    retryAfterSeconds: 42
+                requestId: req-c9ec41fc5da643f8aaf6204fd4386c5c
+
+    InternalError:
+      description: Unexpected server error
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            internal:
+              value:
+                data: null
+                error:
+                  code: INTERNAL_ERROR
+                  message: internal server error
+                requestId: req-38f499d34799436b9877f2da80108112
+
+  schemas:
+    NullValue:
+      nullable: true
+      description: Must be null.
+      example: null
+
+    ErrorObject:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          description: Optional machine-readable error details.
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/NullValue'
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+        requestId:
+          type: string
+
+    RootData:
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        name:
+          type: string
+          example: butaqueando-api
+        status:
+          type: string
+          example: ok
+
+    HealthData:
+      type: object
+      required:
+        - ok
+        - database
+        - timestamp
+      properties:
+        ok:
+          type: boolean
+        database:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+
+    SignUpRequest:
+      type: object
+      required:
+        - displayName
+        - email
+        - password
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 80
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+
+    SignInRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    SignOutRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    AuthUserData:
+      type: object
+      required:
+        - id
+        - displayName
+        - email
+        - role
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+
+    AuthTokensData:
+      type: object
+      required:
+        - tokenType
+        - accessToken
+        - refreshToken
+        - accessTokenExpiresIn
+        - refreshTokenExpiresIn
+        - user
+      properties:
+        tokenType:
+          type: string
+          example: Bearer
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessTokenExpiresIn:
+          type: integer
+          format: int64
+        refreshTokenExpiresIn:
+          type: integer
+          format: int64
+        user:
+          $ref: '#/components/schemas/AuthUserData'
+
+    SignUpData:
+      type: object
+      required:
+        - userId
+        - email
+        - emailVerificationRequired
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        emailVerificationRequired:
+          type: boolean
+        verificationToken:
+          type: string
+          description: Returned only outside production.
+
+    SignOutData:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    RootSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/RootData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    HealthSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/HealthData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    SignUpSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/SignUpData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    AuthSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthTokensData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    SignOutSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/SignOutData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
