@@ -6,6 +6,7 @@ import (
 	"github.com/butaqueando/api/internal/config"
 	"github.com/butaqueando/api/internal/database"
 	apihttp "github.com/butaqueando/api/internal/http"
+	authmodule "github.com/butaqueando/api/internal/modules/auth"
 )
 
 func Bootstrap() (*Application, error) {
@@ -19,7 +20,16 @@ func Bootstrap() (*Application, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	router := apihttp.NewRouter(apihttp.Dependencies{DB: db})
+	router := apihttp.NewRouter(apihttp.Dependencies{
+		DB: db,
+		TokenConfig: authmodule.TokenConfig{
+			Issuer:        cfg.JWTIssuer,
+			AccessSecret:  cfg.JWTAccessSecret,
+			RefreshSecret: cfg.JWTRefreshSecret,
+			AccessTTL:     cfg.JWTAccessTTL,
+			RefreshTTL:    cfg.JWTRefreshTTL,
+		},
+	})
 
 	return &Application{
 		Config: cfg,

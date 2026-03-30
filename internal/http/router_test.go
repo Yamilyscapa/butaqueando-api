@@ -17,7 +17,7 @@ func TestRouterNotImplementedUsesErrorEnvelope(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/v1/auth/sign-in", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-not-impl-test")
 	router.ServeHTTP(recorder, request)
 

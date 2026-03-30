@@ -18,6 +18,11 @@ type Config struct {
 	DBMaxOpenConns    int
 	DBMaxIdleConns    int
 	DBConnMaxLifetime time.Duration
+	JWTIssuer         string
+	JWTAccessSecret   string
+	JWTRefreshSecret  string
+	JWTAccessTTL      time.Duration
+	JWTRefreshTTL     time.Duration
 }
 
 func Load() (Config, error) {
@@ -27,6 +32,15 @@ func Load() (Config, error) {
 	}
 
 	resolvedAppEnv := normalizeEnv(envOrDefault("APP_ENV", appEnv))
+	jwtAccessTTL, err := durationFromEnvStrict("JWT_ACCESS_TTL", 15*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+
+	jwtRefreshTTL, err := durationFromEnvStrict("JWT_REFRESH_TTL", 30*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:            resolvedAppEnv,
@@ -35,10 +49,35 @@ func Load() (Config, error) {
 		DBMaxOpenConns:    intFromEnv("DB_MAX_OPEN_CONNS", 20),
 		DBMaxIdleConns:    intFromEnv("DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetime: durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+		JWTIssuer:         envOrDefault("JWT_ISSUER", "butaqueando-api"),
+		JWTAccessSecret:   os.Getenv("JWT_ACCESS_SECRET"),
+		JWTRefreshSecret:  os.Getenv("JWT_REFRESH_SECRET"),
+		JWTAccessTTL:      jwtAccessTTL,
+		JWTRefreshTTL:     jwtRefreshTTL,
 	}
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	if strings.TrimSpace(cfg.JWTIssuer) == "" {
+		return Config{}, fmt.Errorf("JWT_ISSUER is required")
+	}
+
+	if len(cfg.JWTAccessSecret) < 32 {
+		return Config{}, fmt.Errorf("JWT_ACCESS_SECRET must be at least 32 characters")
+	}
+
+	if len(cfg.JWTRefreshSecret) < 32 {
+		return Config{}, fmt.Errorf("JWT_REFRESH_SECRET must be at least 32 characters")
+	}
+
+	if cfg.JWTAccessTTL <= 0 {
+		return Config{}, fmt.Errorf("JWT_ACCESS_TTL must be greater than 0")
+	}
+
+	if cfg.JWTRefreshTTL <= 0 {
+		return Config{}, fmt.Errorf("JWT_REFRESH_TTL must be greater than 0")
 	}
 
 	return cfg, nil
@@ -79,6 +118,20 @@ func durationFromEnv(key string, fallback time.Duration) time.Duration {
 	}
 
 	return parsed
+}
+
+func durationFromEnvStrict(key string, fallback time.Duration) (time.Duration, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid duration: %w", key, err)
+	}
+
+	return parsed, nil
 }
 
 func normalizeEnv(value string) string {

@@ -15,7 +15,8 @@ import (
 )
 
 type Dependencies struct {
-	DB *gorm.DB
+	DB          *gorm.DB
+	TokenConfig auth.TokenConfig
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -46,7 +47,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	v1 := router.Group("/v1")
 
 	health.RegisterRoutes(v1, health.Dependencies{DB: deps.DB})
-	auth.RegisterRoutes(v1, auth.Dependencies{DB: deps.DB})
+	auth.RegisterRoutes(v1, auth.Dependencies{DB: deps.DB, TokenConfig: deps.TokenConfig})
 	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB})
 	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB})
