@@ -11,17 +11,24 @@ import (
 const BasePath = "/auth"
 
 type Dependencies struct {
-	DB          *gorm.DB
-	TokenConfig TokenConfig
+	DB                        *gorm.DB
+	TokenConfig               TokenConfig
+	EmailVerificationRequired bool
+	ExposeVerificationToken   bool
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	repo := NewRepository(deps.DB)
 	tokens := NewTokenManager(deps.TokenConfig)
-	service := NewService(repo, tokens)
+	emailVerificationRequired := deps.EmailVerificationRequired
+	service := NewService(repo, tokens, ServiceOptions{
+		EmailVerificationRequired: &emailVerificationRequired,
+		ExposeVerificationToken:   deps.ExposeVerificationToken,
+	})
 	handler := NewHandler(service)
 	group := v1.Group(BasePath)
 
+	group.POST("/sign-up", middleware.AuthRateLimit(15, time.Minute), handler.SignUp)
 	group.POST("/sign-in", middleware.AuthRateLimit(15, time.Minute), handler.SignIn)
 	group.POST("/refresh", middleware.AuthRateLimit(30, time.Minute), handler.Refresh)
 	group.POST("/sign-out", handler.SignOut)

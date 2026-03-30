@@ -12,17 +12,18 @@ import (
 )
 
 type Config struct {
-	AppEnv            string
-	Port              string
-	DatabaseURL       string
-	DBMaxOpenConns    int
-	DBMaxIdleConns    int
-	DBConnMaxLifetime time.Duration
-	JWTIssuer         string
-	JWTAccessSecret   string
-	JWTRefreshSecret  string
-	JWTAccessTTL      time.Duration
-	JWTRefreshTTL     time.Duration
+	AppEnv                    string
+	Port                      string
+	DatabaseURL               string
+	DBMaxOpenConns            int
+	DBMaxIdleConns            int
+	DBConnMaxLifetime         time.Duration
+	JWTIssuer                 string
+	JWTAccessSecret           string
+	JWTRefreshSecret          string
+	JWTAccessTTL              time.Duration
+	JWTRefreshTTL             time.Duration
+	EmailVerificationRequired bool
 }
 
 func Load() (Config, error) {
@@ -42,18 +43,24 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	emailVerificationRequired, err := boolFromEnvStrict("EMAIL_VERIFICATION_REQUIRED", true)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
-		AppEnv:            resolvedAppEnv,
-		Port:              envOrDefault("PORT", "3000"),
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		DBMaxOpenConns:    intFromEnv("DB_MAX_OPEN_CONNS", 20),
-		DBMaxIdleConns:    intFromEnv("DB_MAX_IDLE_CONNS", 5),
-		DBConnMaxLifetime: durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
-		JWTIssuer:         envOrDefault("JWT_ISSUER", "butaqueando-api"),
-		JWTAccessSecret:   os.Getenv("JWT_ACCESS_SECRET"),
-		JWTRefreshSecret:  os.Getenv("JWT_REFRESH_SECRET"),
-		JWTAccessTTL:      jwtAccessTTL,
-		JWTRefreshTTL:     jwtRefreshTTL,
+		AppEnv:                    resolvedAppEnv,
+		Port:                      envOrDefault("PORT", "3000"),
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		DBMaxOpenConns:            intFromEnv("DB_MAX_OPEN_CONNS", 20),
+		DBMaxIdleConns:            intFromEnv("DB_MAX_IDLE_CONNS", 5),
+		DBConnMaxLifetime:         durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+		JWTIssuer:                 envOrDefault("JWT_ISSUER", "butaqueando-api"),
+		JWTAccessSecret:           os.Getenv("JWT_ACCESS_SECRET"),
+		JWTRefreshSecret:          os.Getenv("JWT_REFRESH_SECRET"),
+		JWTAccessTTL:              jwtAccessTTL,
+		JWTRefreshTTL:             jwtRefreshTTL,
+		EmailVerificationRequired: emailVerificationRequired,
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -78,6 +85,10 @@ func Load() (Config, error) {
 
 	if cfg.JWTRefreshTTL <= 0 {
 		return Config{}, fmt.Errorf("JWT_REFRESH_TTL must be greater than 0")
+	}
+
+	if cfg.AppEnv == "production" && !cfg.EmailVerificationRequired {
+		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REQUIRED must be true in production")
 	}
 
 	return cfg, nil
@@ -129,6 +140,20 @@ func durationFromEnvStrict(key string, fallback time.Duration) (time.Duration, e
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a valid duration: %w", key, err)
+	}
+
+	return parsed, nil
+}
+
+func boolFromEnvStrict(key string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a valid boolean: %w", key, err)
 	}
 
 	return parsed, nil

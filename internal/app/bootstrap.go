@@ -29,6 +29,8 @@ func Bootstrap() (*Application, error) {
 			AccessTTL:     cfg.JWTAccessTTL,
 			RefreshTTL:    cfg.JWTRefreshTTL,
 		},
+		EmailVerificationRequired: cfg.EmailVerificationRequired,
+		ExposeVerificationToken:   cfg.AppEnv != "production",
 	})
 
 	return &Application{

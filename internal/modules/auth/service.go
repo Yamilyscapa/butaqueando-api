@@ -2,15 +2,22 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+const defaultVerificationTokenTTL = 24 * time.Hour
 
 type repositoryPort interface {
 	FindUserByEmail(ctx context.Context, email string) (UserRecord, error)
@@ -19,6 +26,7 @@ type repositoryPort interface {
 	FindActiveRefreshToken(ctx context.Context, tokenID string, userID string, now time.Time) (RefreshTokenRecord, error)
 	RotateRefreshToken(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenID string, userID string, now time.Time) error
+	CreatePendingUser(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
 }
 
 type tokenManagerPort interface {
@@ -27,20 +35,96 @@ type tokenManagerPort interface {
 	ParseRefreshToken(rawToken string) (RefreshClaims, error)
 }
 
-type Service struct {
-	repo   repositoryPort
-	tokens tokenManagerPort
-	now    func() time.Time
+type ServiceOptions struct {
+	EmailVerificationRequired *bool
+	ExposeVerificationToken   bool
+	VerificationTokenTTL      time.Duration
 }
 
-func NewService(repo repositoryPort, tokens tokenManagerPort) *Service {
-	return &Service{
-		repo:   repo,
-		tokens: tokens,
-		now: func() time.Time {
-			return time.Now().UTC()
-		},
+type Service struct {
+	repo                      repositoryPort
+	tokens                    tokenManagerPort
+	now                       func() time.Time
+	emailVerificationRequired bool
+	exposeVerificationToken   bool
+	verificationTokenTTL      time.Duration
+}
+
+func NewService(repo repositoryPort, tokens tokenManagerPort, options ServiceOptions) *Service {
+	emailVerificationRequired := true
+	if options.EmailVerificationRequired != nil {
+		emailVerificationRequired = *options.EmailVerificationRequired
 	}
+
+	verificationTokenTTL := options.VerificationTokenTTL
+	if verificationTokenTTL <= 0 {
+		verificationTokenTTL = defaultVerificationTokenTTL
+	}
+
+	return &Service{
+		repo:                      repo,
+		tokens:                    tokens,
+		now:                       func() time.Time { return time.Now().UTC() },
+		emailVerificationRequired: emailVerificationRequired,
+		exposeVerificationToken:   options.ExposeVerificationToken,
+		verificationTokenTTL:      verificationTokenTTL,
+	}
+}
+
+func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, error) {
+	displayName := strings.TrimSpace(req.DisplayName)
+	email := normalizeEmail(req.Email)
+	password := strings.TrimSpace(req.Password)
+
+	if displayName == "" || email == "" || password == "" {
+		return SignUpData{}, sharederrors.Validation("displayName, email and password are required", nil)
+	}
+
+	if _, err := s.repo.FindUserByEmail(ctx, email); err == nil {
+		return SignUpData{}, sharederrors.New(http.StatusConflict, "EMAIL_ALREADY_IN_USE", "email already in use", nil)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return SignUpData{}, sharederrors.Internal("failed to sign up", nil)
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return SignUpData{}, sharederrors.Internal("failed to sign up", nil)
+	}
+
+	verificationToken, err := generateVerificationToken()
+	if err != nil {
+		return SignUpData{}, sharederrors.Internal("failed to sign up", nil)
+	}
+
+	now := s.now()
+	createdUser, err := s.repo.CreatePendingUser(ctx, CreatePendingUserInput{
+		DisplayName:                displayName,
+		Email:                      email,
+		PasswordHash:               string(passwordHash),
+		Role:                       "user",
+		EmailVerificationTokenHash: hashVerificationToken(verificationToken),
+		EmailVerificationExpiresAt: now.Add(s.verificationTokenTTL),
+		CreatedAt:                  now,
+	})
+	if err != nil {
+		if isEmailAlreadyInUseError(err) {
+			return SignUpData{}, sharederrors.New(http.StatusConflict, "EMAIL_ALREADY_IN_USE", "email already in use", nil)
+		}
+
+		return SignUpData{}, sharederrors.Internal("failed to sign up", nil)
+	}
+
+	response := SignUpData{
+		UserID:                    createdUser.ID,
+		Email:                     createdUser.Email,
+		EmailVerificationRequired: s.emailVerificationRequired,
+	}
+
+	if s.exposeVerificationToken {
+		response.VerificationToken = &verificationToken
+	}
+
+	return response, nil
 }
 
 func (s *Service) SignIn(ctx context.Context, req SignInRequest) (AuthTokensData, error) {
@@ -58,7 +142,7 @@ func (s *Service) SignIn(ctx context.Context, req SignInRequest) (AuthTokensData
 		return AuthTokensData{}, sharederrors.Internal("failed to sign in", nil)
 	}
 
-	if user.EmailVerifiedAt == nil {
+	if s.emailVerificationRequired && user.EmailVerifiedAt == nil {
 		return AuthTokensData{}, sharederrors.New(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "email must be verified before signing in", nil)
 	}
 
@@ -180,4 +264,35 @@ func durationSeconds(now time.Time, expiresAt time.Time) int64 {
 
 func normalizeEmail(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func generateVerificationToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func hashVerificationToken(rawToken string) string {
+	sum := sha256.Sum256([]byte(rawToken))
+	return hex.EncodeToString(sum[:])
+}
+
+func isEmailAlreadyInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+
+	return false
 }
