@@ -51,3 +51,8 @@ type RefreshClaims struct {
 	Role    string
 	TokenID string
 }
+
+type AccessClaims struct {
+	UserID string
+	Role   string
+}

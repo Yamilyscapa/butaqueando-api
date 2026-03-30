@@ -10,6 +10,7 @@ info:
     - system root
     - health/readiness
     - auth (sign-up, sign-in, refresh, sign-out)
+    - users profile endpoints (/users/me and public profile)
 
 servers:
   - url: http://localhost:3000
@@ -19,6 +20,7 @@ tags:
   - name: system
   - name: health
   - name: auth
+  - name: users
 
 paths:
   /:
@@ -309,6 +311,129 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/users/{userId}/profile:
+    get:
+      tags: [users]
+      summary: Get public user profile
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Public profile loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      id: 00000000-0000-0000-0000-000000000002
+                      displayName: Ana Torres
+                      bio: Fan de dramas clasicos y montajes contemporaneos.
+                      stats:
+                        followersCount: 4
+                        followingCount: 2
+                        watchedCount: 3
+                        reviewsCount: 3
+                    error: null
+                    requestId: req-e58154ed393d4c1f9e6fb488e6c8ad19
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/profile:
+    get:
+      tags: [users]
+      summary: Get own profile
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: Own profile loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeProfileSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      id: 00000000-0000-0000-0000-000000000002
+                      displayName: Ana Torres
+                      email: ana@example.com
+                      role: user
+                      bio: Fan de dramas clasicos y montajes contemporaneos.
+                      stats:
+                        followersCount: 4
+                        followingCount: 2
+                        watchedCount: 3
+                        reviewsCount: 3
+                    error: null
+                    requestId: req-08f49dbe29774f36b234fd5f9ab7a1df
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [users]
+      summary: Update own profile
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeProfileRequest'
+            examples:
+              updateBio:
+                value:
+                  bio: updated from mobile app
+              updateDisplayName:
+                value:
+                  displayName: Ana Updated
+      responses:
+        '200':
+          description: Own profile updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeProfileSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   parameters:
     XRequestID:
@@ -404,6 +529,30 @@ components:
                   message: internal server error
                 requestId: req-38f499d34799436b9877f2da80108112
 
+    NotFound:
+      description: Requested resource not found
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            notFound:
+              value:
+                data: null
+                error:
+                  code: NOT_FOUND
+                  message: user profile not found
+                requestId: req-cfce9c26895a4419af84f22684f273d9
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     NullValue:
       nullable: true
@@ -464,6 +613,82 @@ components:
         timestamp:
           type: string
           format: date-time
+
+    ProfileStatsData:
+      type: object
+      required:
+        - followersCount
+        - followingCount
+        - watchedCount
+        - reviewsCount
+      properties:
+        followersCount:
+          type: integer
+          format: int64
+        followingCount:
+          type: integer
+          format: int64
+        watchedCount:
+          type: integer
+          format: int64
+        reviewsCount:
+          type: integer
+          format: int64
+
+    PublicProfileData:
+      type: object
+      required:
+        - id
+        - displayName
+        - stats
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        stats:
+          $ref: '#/components/schemas/ProfileStatsData'
+
+    MeProfileData:
+      type: object
+      required:
+        - id
+        - displayName
+        - email
+        - role
+        - stats
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+        bio:
+          type: string
+          nullable: true
+        stats:
+          $ref: '#/components/schemas/ProfileStatsData'
+
+    UpdateMeProfileRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 500
 
     SignUpRequest:
       type: object
@@ -651,6 +876,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/SignOutData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    PublicProfileSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicProfileData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    MeProfileSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/MeProfileData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

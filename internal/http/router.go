@@ -22,6 +22,16 @@ type Dependencies struct {
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
+	accessTokenManager := auth.NewTokenManager(deps.TokenConfig)
+	accessTokenParser := func(rawToken string) (middleware.AccessTokenClaims, error) {
+		claims, err := accessTokenManager.ParseAccessToken(rawToken)
+		if err != nil {
+			return middleware.AccessTokenClaims{}, err
+		}
+
+		return middleware.AccessTokenClaims{UserID: claims.UserID, Role: claims.Role}, nil
+	}
+
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
 	router.Use(
@@ -55,7 +65,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		EmailVerificationRequired: deps.EmailVerificationRequired,
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
 	})
-	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB})
+	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB})
 

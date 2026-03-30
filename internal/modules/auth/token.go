@@ -115,6 +115,26 @@ func (m *TokenManager) ParseRefreshToken(rawToken string) (RefreshClaims, error)
 	}, nil
 }
 
+func (m *TokenManager) ParseAccessToken(rawToken string) (AccessClaims, error) {
+	claims, err := m.parse(rawToken, m.accessSecret)
+	if err != nil {
+		return AccessClaims{}, err
+	}
+
+	if claims.Type != tokenTypeAccess {
+		return AccessClaims{}, ErrInvalidToken
+	}
+
+	if claims.Subject == "" {
+		return AccessClaims{}, ErrInvalidToken
+	}
+
+	return AccessClaims{
+		UserID: claims.Subject,
+		Role:   claims.Role,
+	}, nil
+}
+
 func (m *TokenManager) parse(rawToken string, secret []byte) (*tokenClaims, error) {
 	claims := &tokenClaims{}
 	parsedToken, err := jwt.ParseWithClaims(

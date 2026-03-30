@@ -59,3 +59,54 @@ func TestTokenManagerRejectsAccessTokenAsRefreshToken(t *testing.T) {
 		t.Fatalf("expected parse refresh token to fail for access token")
 	}
 }
+
+func TestTokenManagerGenerateAndParseAccessToken(t *testing.T) {
+	t.Parallel()
+
+	manager := NewTokenManager(TokenConfig{
+		Issuer:        "butaqueando-api",
+		AccessSecret:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		RefreshSecret: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		AccessTTL:     15 * time.Minute,
+		RefreshTTL:    30 * 24 * time.Hour,
+	})
+
+	accessToken, _, err := manager.GenerateAccessToken("user-1", "admin")
+	if err != nil {
+		t.Fatalf("generate access token: %v", err)
+	}
+
+	claims, err := manager.ParseAccessToken(accessToken)
+	if err != nil {
+		t.Fatalf("parse access token: %v", err)
+	}
+
+	if claims.UserID != "user-1" {
+		t.Fatalf("expected user id %q, got %q", "user-1", claims.UserID)
+	}
+
+	if claims.Role != "admin" {
+		t.Fatalf("expected role %q, got %q", "admin", claims.Role)
+	}
+}
+
+func TestTokenManagerRejectsRefreshTokenAsAccessToken(t *testing.T) {
+	t.Parallel()
+
+	manager := NewTokenManager(TokenConfig{
+		Issuer:        "butaqueando-api",
+		AccessSecret:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		RefreshSecret: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		AccessTTL:     15 * time.Minute,
+		RefreshTTL:    30 * 24 * time.Hour,
+	})
+
+	refreshToken, _, _, err := manager.GenerateRefreshToken("user-1", "user")
+	if err != nil {
+		t.Fatalf("generate refresh token: %v", err)
+	}
+
+	if _, err := manager.ParseAccessToken(refreshToken); err == nil {
+		t.Fatalf("expected parse access token to fail for refresh token")
+	}
+}
