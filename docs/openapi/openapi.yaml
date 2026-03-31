@@ -9,7 +9,7 @@ info:
     stable in the codebase:
     - system root
     - health/readiness
-    - plays read endpoints (feed, search, details)
+    - plays endpoints (read, reviews/comments, engagements, submissions/moderation)
     - auth (sign-up, sign-in, refresh, sign-out)
     - users profile endpoints (/users/me and public profile)
     - follows (follow/unfollow and follow graph listings)
@@ -238,6 +238,516 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/plays/{playId}/reviews:
+    get:
+      tags: [plays]
+      summary: List published reviews for a play
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Review list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [plays]
+      summary: Create a review for a play
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+            examples:
+              default:
+                value:
+                  rating: 5
+                  title: Excelente puesta
+                  body: Gran direccion y actuaciones memorables.
+                  containsSpoilers: false
+      responses:
+        '201':
+          description: Review created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ReviewAlreadyExists'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/plays/{playId}/engagements:
+    post:
+      tags: [plays]
+      summary: Set engagement state for a play
+      description: |
+        Supported kinds:
+        - `wishlist`
+        - `attended`
+
+        Rule: setting `attended` clears `wishlist` for the same play.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetEngagementRequest'
+            examples:
+              wishlist:
+                value:
+                  kind: wishlist
+              attended:
+                value:
+                  kind: attended
+      responses:
+        '200':
+          description: Engagement state updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementStateSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/plays/{playId}/engagements/{kind}:
+    delete:
+      tags: [plays]
+      summary: Delete engagement state for a play kind
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [wishlist, attended]
+      responses:
+        '200':
+          description: Engagement state updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementStateSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reviews/{reviewId}:
+    patch:
+      tags: [plays]
+      summary: Update your own review
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewRequest'
+            examples:
+              updateRatingAndBody:
+                value:
+                  rating: 4
+                  body: Actualizo mi opinion despues de una segunda funcion.
+      responses:
+        '200':
+          description: Review updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reviews/{reviewId}/comments:
+    post:
+      tags: [plays]
+      summary: Create a flat comment on a review
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewCommentRequest'
+            examples:
+              default:
+                value:
+                  body: Coincido con tu punto sobre la direccion.
+      responses:
+        '201':
+          description: Review comment created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCommentSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/submissions/plays:
+    post:
+      tags: [plays]
+      summary: Create a new play submission
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionRequest'
+      responses:
+        '201':
+          description: Submission created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/submissions/plays:
+    get:
+      tags: [plays]
+      summary: List my play submissions
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, published, rejected]
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Submission list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/submissions/plays/{playId}:
+    patch:
+      tags: [plays]
+      summary: Edit and resubmit your play submission
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubmissionRequest'
+      responses:
+        '200':
+          description: Submission updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidCurationTransition'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/submissions/plays:
+    get:
+      tags: [plays]
+      summary: List submissions for moderation
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, published, rejected]
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Submission list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/submissions/plays/{playId}/approve:
+    post:
+      tags: [plays]
+      summary: Approve pending play submission
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission approved
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidCurationTransition'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/submissions/plays/{playId}/reject:
+    post:
+      tags: [plays]
+      summary: Reject pending play submission
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectSubmissionRequest'
+      responses:
+        '200':
+          description: Submission rejected
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidCurationTransition'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -836,6 +1346,24 @@ components:
                   message: invalid email or password
                 requestId: req-8eb90f4f5a9f4f7f895243f37d5dc9c6
 
+    Forbidden:
+      description: Authenticated but not allowed to perform the action
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            forbidden:
+              value:
+                data: null
+                error:
+                  code: FORBIDDEN
+                  message: you can only edit your own reviews
+                requestId: req-d1f6a5f2b0244f6ab00f9ebf9881c5c0
+
     RateLimited:
       description: Too many requests
       headers:
@@ -893,6 +1421,45 @@ components:
                   code: NOT_FOUND
                   message: user profile not found
                 requestId: req-cfce9c26895a4419af84f22684f273d9
+
+    ReviewAlreadyExists:
+      description: Review for this play already exists
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            duplicate:
+              value:
+                data: null
+                error:
+                  code: REVIEW_ALREADY_EXISTS
+                  message: review already exists
+                requestId: req-b3269f9e4ce84d4ca6db20d3d07dd97d
+
+    InvalidCurationTransition:
+      description: Invalid curation state transition
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            invalidTransition:
+              value:
+                data: null
+                error:
+                  code: INVALID_CURATION_TRANSITION
+                  message: invalid curation status transition
+                  details:
+                    from: rejected
+                    to: published
+                requestId: req-d4f95f1937244f64b91f8af5ca9825de
 
   securitySchemes:
     BearerAuth:
@@ -1121,6 +1688,284 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlayMediaData'
+
+    CreateReviewRequest:
+      type: object
+      required:
+        - rating
+        - body
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        containsSpoilers:
+          type: boolean
+
+    UpdateReviewRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        containsSpoilers:
+          type: boolean
+
+    CreateReviewCommentRequest:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+
+    SetEngagementRequest:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum: [wishlist, attended]
+
+    ReviewData:
+      type: object
+      required:
+        - id
+        - userId
+        - displayName
+        - rating
+        - body
+        - containsSpoilers
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        containsSpoilers:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ReviewListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewData'
+        nextCursor:
+          type: string
+          nullable: true
+
+    ReviewCommentData:
+      type: object
+      required:
+        - id
+        - reviewId
+        - userId
+        - displayName
+        - body
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateSubmissionRequest:
+      type: object
+      required:
+        - title
+        - synopsis
+        - director
+        - durationMinutes
+        - theaterName
+      properties:
+        title:
+          type: string
+        synopsis:
+          type: string
+        director:
+          type: string
+        durationMinutes:
+          type: integer
+          minimum: 1
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+
+    UpdateSubmissionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        synopsis:
+          type: string
+        director:
+          type: string
+        durationMinutes:
+          type: integer
+          minimum: 1
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+
+    RejectSubmissionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+
+    SubmissionData:
+      type: object
+      required:
+        - id
+        - title
+        - synopsis
+        - director
+        - durationMinutes
+        - theaterName
+        - availabilityStatus
+        - curationStatus
+        - createdByUserId
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        synopsis:
+          type: string
+        director:
+          type: string
+        durationMinutes:
+          type: integer
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        curationStatus:
+          type: string
+          enum: [pending, published, rejected]
+        createdByUserId:
+          type: string
+          format: uuid
+        moderatedByUserId:
+          type: string
+          format: uuid
+          nullable: true
+        moderatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectedReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SubmissionListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionData'
+        nextCursor:
+          type: string
+          nullable: true
+
+    EngagementStateData:
+      type: object
+      required:
+        - playId
+        - wishlist
+        - attended
+      properties:
+        playId:
+          type: string
+          format: uuid
+        wishlist:
+          type: boolean
+        attended:
+          type: boolean
 
     ProfileStatsData:
       type: object
@@ -1414,6 +2259,90 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PlayDetailsData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ReviewListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ReviewListData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ReviewSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ReviewData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ReviewCommentSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ReviewCommentData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    SubmissionSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/SubmissionData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    SubmissionListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/SubmissionListData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    EngagementStateSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/EngagementStateData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type FeedListParams struct {
@@ -25,6 +26,12 @@ type SearchListParams struct {
 	AvailabilityStatus *string
 	After              *playListCursor
 	Limit              int
+}
+
+type ListReviewsParams struct {
+	PlayID string
+	After  *reviewListCursor
+	Limit  int
 }
 
 type Repository struct {
@@ -269,6 +276,659 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 	return media, nil
 }
 
+func (r *Repository) IsPlayPublished(ctx context.Context, playID string) (bool, error) {
+	if err := r.ensureDB(); err != nil {
+		return false, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return false, err
+	}
+
+	var count int64
+	err = r.db.WithContext(ctx).
+		Table("app.plays").
+		Where("id = ? AND curation_status = ?", playUUID, "published").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+func (r *Repository) ListPublishedReviews(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	playUUID, err := parseUUID(params.PlayID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.reviews AS r").
+		Select(`
+			r.id,
+			r.user_id,
+			u.display_name,
+			r.rating,
+			r.title,
+			r.body,
+			r.contains_spoilers,
+			r.created_at,
+			r.updated_at
+		`).
+		Joins("JOIN app.users AS u ON u.id = r.user_id").
+		Where("r.play_id = ? AND r.status = ?", playUUID, "published")
+
+	if params.After != nil {
+		reviewUUID, err := parseUUID(params.After.ReviewID)
+		if err != nil {
+			return nil, err
+		}
+
+		query = query.Where(
+			"(r.created_at < ?) OR (r.created_at = ? AND r.id < ?)",
+			params.After.CreatedAt,
+			params.After.CreatedAt,
+			reviewUUID,
+		)
+	}
+
+	var rows []reviewRow
+	err = query.
+		Order("r.created_at DESC").
+		Order("r.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]ReviewRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, ReviewRecord{
+			ID:               row.ID.String(),
+			UserID:           row.UserID.String(),
+			DisplayName:      row.DisplayName,
+			Rating:           int(row.Rating),
+			Title:            row.Title,
+			Body:             row.Body,
+			ContainsSpoilers: row.ContainsSpoilers,
+			CreatedAt:        row.CreatedAt,
+			UpdatedAt:        row.UpdatedAt,
+		})
+	}
+
+	return records, nil
+}
+
+func (r *Repository) CreateReview(ctx context.Context, userID string, playID string, params CreateReviewParams) (ReviewRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return ReviewRecord{}, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return ReviewRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return ReviewRecord{}, err
+	}
+
+	entity := reviewEntity{
+		PlayID:           playUUID,
+		UserID:           userUUID,
+		Rating:           int16(params.Rating),
+		Title:            params.Title,
+		Body:             params.Body,
+		ContainsSpoilers: params.ContainsSpoilers,
+		Status:           "published",
+		CreatedAt:        params.CreatedAt,
+		UpdatedAt:        params.UpdatedAt,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return ReviewRecord{}, err
+	}
+
+	return r.getReviewByID(ctx, entity.ID)
+}
+
+func (r *Repository) GetReviewMetadata(ctx context.Context, reviewID string) (ReviewMetadataRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return ReviewMetadataRecord{}, err
+	}
+
+	reviewUUID, err := parseUUID(reviewID)
+	if err != nil {
+		return ReviewMetadataRecord{}, err
+	}
+
+	var row reviewMetadataRow
+	err = r.db.WithContext(ctx).
+		Table("app.reviews AS r").
+		Select("r.id, r.play_id, r.user_id, r.status, p.curation_status").
+		Joins("JOIN app.plays AS p ON p.id = r.play_id").
+		Where("r.id = ?", reviewUUID).
+		Take(&row).Error
+	if err != nil {
+		return ReviewMetadataRecord{}, err
+	}
+
+	return ReviewMetadataRecord{
+		ReviewID:           row.ReviewID.String(),
+		PlayID:             row.PlayID.String(),
+		UserID:             row.UserID.String(),
+		ReviewStatus:       row.ReviewStatus,
+		PlayCurationStatus: row.PlayCurationStatus,
+	}, nil
+}
+
+func (r *Repository) UpdateReview(ctx context.Context, reviewID string, params UpdateReviewParams) (ReviewRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return ReviewRecord{}, err
+	}
+
+	reviewUUID, err := parseUUID(reviewID)
+	if err != nil {
+		return ReviewRecord{}, err
+	}
+
+	updates := map[string]any{
+		"updated_at": params.UpdatedAt,
+	}
+
+	if params.Rating != nil {
+		updates["rating"] = int16(*params.Rating)
+	}
+
+	if params.TitleProvided {
+		updates["title"] = params.Title
+	}
+
+	if params.Body != nil {
+		updates["body"] = *params.Body
+	}
+
+	if params.ContainsSpoilers != nil {
+		updates["contains_spoilers"] = *params.ContainsSpoilers
+	}
+
+	err = r.db.WithContext(ctx).
+		Model(&reviewEntity{}).
+		Where("id = ?", reviewUUID).
+		Updates(updates).Error
+	if err != nil {
+		return ReviewRecord{}, err
+	}
+
+	return r.getReviewByID(ctx, reviewUUID)
+}
+
+func (r *Repository) CreateReviewComment(ctx context.Context, userID string, reviewID string, params CreateReviewCommentParams) (ReviewCommentRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return ReviewCommentRecord{}, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return ReviewCommentRecord{}, err
+	}
+
+	reviewUUID, err := parseUUID(reviewID)
+	if err != nil {
+		return ReviewCommentRecord{}, err
+	}
+
+	entity := reviewCommentEntity{
+		ReviewID:  reviewUUID,
+		UserID:    userUUID,
+		Body:      params.Body,
+		Status:    "published",
+		CreatedAt: params.CreatedAt,
+		UpdatedAt: params.UpdatedAt,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return ReviewCommentRecord{}, err
+	}
+
+	var row reviewCommentRow
+	err = r.db.WithContext(ctx).
+		Table("app.review_comments AS rc").
+		Select(`
+			rc.id,
+			rc.review_id,
+			rc.user_id,
+			u.display_name,
+			rc.body,
+			rc.created_at,
+			rc.updated_at
+		`).
+		Joins("JOIN app.users AS u ON u.id = rc.user_id").
+		Where("rc.id = ?", entity.ID).
+		Take(&row).Error
+	if err != nil {
+		return ReviewCommentRecord{}, err
+	}
+
+	return ReviewCommentRecord{
+		ID:          row.ID.String(),
+		ReviewID:    row.ReviewID.String(),
+		UserID:      row.UserID.String(),
+		DisplayName: row.DisplayName,
+		Body:        row.Body,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}, nil
+}
+
+func (r *Repository) SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		switch kind {
+		case "attended":
+			engagement := userPlayEngagementEntity{
+				UserID:    userUUID,
+				PlayID:    playUUID,
+				Kind:      kind,
+				CreatedAt: createdAt,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&engagement).Error; err != nil {
+				return err
+			}
+
+			if err := tx.Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, "wishlist").Delete(&userPlayEngagementEntity{}).Error; err != nil {
+				return err
+			}
+		case "wishlist":
+			var attendedCount int64
+			if err := tx.Model(&userPlayEngagementEntity{}).Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, "attended").Count(&attendedCount).Error; err != nil {
+				return err
+			}
+
+			if attendedCount > 0 {
+				return nil
+			}
+
+			engagement := userPlayEngagementEntity{
+				UserID:    userUUID,
+				PlayID:    playUUID,
+				Kind:      kind,
+				CreatedAt: createdAt,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&engagement).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func (r *Repository) DeleteEngagement(ctx context.Context, userID string, playID string, kind string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).
+		Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, kind).
+		Delete(&userPlayEngagementEntity{}).Error
+}
+
+func (r *Repository) GetEngagementState(ctx context.Context, userID string, playID string) (EngagementStateRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	var wishlistCount int64
+	err = r.db.WithContext(ctx).
+		Model(&userPlayEngagementEntity{}).
+		Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, "wishlist").
+		Count(&wishlistCount).Error
+	if err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	var attendedCount int64
+	err = r.db.WithContext(ctx).
+		Model(&userPlayEngagementEntity{}).
+		Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, "attended").
+		Count(&attendedCount).Error
+	if err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	return EngagementStateRecord{Wishlist: wishlistCount > 0, Attended: attendedCount > 0}, nil
+}
+
+func (r *Repository) CreateSubmission(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	creatorUUID, err := parseUUID(userID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	entity := playEntity{
+		Title:              params.Title,
+		Synopsis:           params.Synopsis,
+		Director:           params.Director,
+		DurationMinutes:    params.DurationMinutes,
+		TheaterName:        params.TheaterName,
+		City:               params.City,
+		AvailabilityStatus: params.AvailabilityStatus,
+		CurationStatus:     "pending",
+		CreatedByUserID:    creatorUUID,
+		CreatedAt:          params.CreatedAt,
+		UpdatedAt:          params.UpdatedAt,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	return r.getSubmissionByUUID(ctx, entity.ID)
+}
+
+func (r *Repository) GetSubmissionByID(ctx context.Context, playID string) (SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	return r.getSubmissionByUUID(ctx, playUUID)
+}
+
+func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	creatorUUID, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.plays AS p").
+		Select(`
+			p.id,
+			p.title,
+			p.synopsis,
+			p.director,
+			p.duration_minutes,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.curation_status,
+			p.created_by_user_id,
+			p.moderated_by_user_id,
+			p.moderated_at,
+			p.published_at,
+			p.rejected_reason,
+			p.created_at,
+			p.updated_at
+		`).
+		Where("p.created_by_user_id = ?", creatorUUID)
+
+	if params.Status != nil {
+		query = query.Where("p.curation_status = ?", *params.Status)
+	}
+
+	query, err = applySubmissionListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []submissionRow
+	err = query.
+		Order("p.created_at DESC").
+		Order("p.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return mapSubmissionRows(rows), nil
+}
+
+func (r *Repository) ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.plays AS p").
+		Select(`
+			p.id,
+			p.title,
+			p.synopsis,
+			p.director,
+			p.duration_minutes,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.curation_status,
+			p.created_by_user_id,
+			p.moderated_by_user_id,
+			p.moderated_at,
+			p.published_at,
+			p.rejected_reason,
+			p.created_at,
+			p.updated_at
+		`)
+
+	if params.Status != nil {
+		query = query.Where("p.curation_status = ?", *params.Status)
+	}
+
+	query, err := applySubmissionListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []submissionRow
+	err = query.
+		Order("p.created_at DESC").
+		Order("p.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return mapSubmissionRows(rows), nil
+}
+
+func (r *Repository) UpdateSubmission(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	updates := map[string]any{
+		"updated_at": params.UpdatedAt,
+	}
+
+	if params.Title != nil {
+		updates["title"] = *params.Title
+	}
+
+	if params.Synopsis != nil {
+		updates["synopsis"] = *params.Synopsis
+	}
+
+	if params.Director != nil {
+		updates["director"] = *params.Director
+	}
+
+	if params.DurationMinutes != nil {
+		updates["duration_minutes"] = *params.DurationMinutes
+	}
+
+	if params.TheaterName != nil {
+		updates["theater_name"] = *params.TheaterName
+	}
+
+	if params.CityProvided {
+		updates["city"] = params.City
+	}
+
+	if params.AvailabilityStatus != nil {
+		updates["availability_status"] = *params.AvailabilityStatus
+	}
+
+	if params.SetPendingResubmit {
+		updates["curation_status"] = "pending"
+	}
+
+	if params.ClearModerationAudit {
+		updates["moderated_by_user_id"] = nil
+		updates["moderated_at"] = nil
+		updates["published_at"] = nil
+		updates["rejected_reason"] = nil
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&playEntity{}).
+		Where("id = ?", playUUID).
+		Updates(updates)
+	if result.Error != nil {
+		return SubmissionRecord{}, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return SubmissionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return r.getSubmissionByUUID(ctx, playUUID)
+}
+
+func (r *Repository) ApproveSubmission(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	adminUUID, err := parseUUID(adminUserID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&playEntity{}).
+		Where("id = ?", playUUID).
+		Updates(map[string]any{
+			"curation_status":      "published",
+			"moderated_by_user_id": adminUUID,
+			"moderated_at":         now,
+			"published_at":         now,
+			"rejected_reason":      nil,
+			"updated_at":           now,
+		})
+	if result.Error != nil {
+		return SubmissionRecord{}, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return SubmissionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return r.getSubmissionByUUID(ctx, playUUID)
+}
+
+func (r *Repository) RejectSubmission(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	adminUUID, err := parseUUID(adminUserID)
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&playEntity{}).
+		Where("id = ?", playUUID).
+		Updates(map[string]any{
+			"curation_status":      "rejected",
+			"moderated_by_user_id": adminUUID,
+			"moderated_at":         now,
+			"published_at":         nil,
+			"rejected_reason":      reason,
+			"updated_at":           now,
+		})
+	if result.Error != nil {
+		return SubmissionRecord{}, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return SubmissionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return r.getSubmissionByUUID(ctx, playUUID)
+}
+
 func (r *Repository) basePlayListQuery(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).
 		Table("app.plays AS p").
@@ -333,6 +993,130 @@ func mapPlayListRows(rows []playListRow) []PlayListRecord {
 	return records
 }
 
+func applySubmissionListCursor(query *gorm.DB, after *submissionListCursor) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	playUUID, err := parseUUID(after.PlayID)
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		"(p.created_at < ?) OR (p.created_at = ? AND p.id < ?)",
+		after.CreatedAt,
+		after.CreatedAt,
+		playUUID,
+	), nil
+}
+
+func mapSubmissionRows(rows []submissionRow) []SubmissionRecord {
+	records := make([]SubmissionRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, SubmissionRecord{
+			ID:                 row.ID.String(),
+			Title:              row.Title,
+			Synopsis:           row.Synopsis,
+			Director:           row.Director,
+			DurationMinutes:    row.DurationMinutes,
+			TheaterName:        row.TheaterName,
+			City:               row.City,
+			AvailabilityStatus: row.AvailabilityStatus,
+			CurationStatus:     row.CurationStatus,
+			CreatedByUserID:    row.CreatedByUserID.String(),
+			ModeratedByUserID:  nullableUUIDToString(row.ModeratedByUserID),
+			ModeratedAt:        row.ModeratedAt,
+			PublishedAt:        row.PublishedAt,
+			RejectedReason:     row.RejectedReason,
+			CreatedAt:          row.CreatedAt,
+			UpdatedAt:          row.UpdatedAt,
+		})
+	}
+
+	return records
+}
+
+func nullableUUIDToString(id *uuid.UUID) *string {
+	if id == nil {
+		return nil
+	}
+
+	raw := id.String()
+	return &raw
+}
+
+func (r *Repository) getSubmissionByUUID(ctx context.Context, playUUID uuid.UUID) (SubmissionRecord, error) {
+	var row submissionRow
+	err := r.db.WithContext(ctx).
+		Table("app.plays AS p").
+		Select(`
+			p.id,
+			p.title,
+			p.synopsis,
+			p.director,
+			p.duration_minutes,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.curation_status,
+			p.created_by_user_id,
+			p.moderated_by_user_id,
+			p.moderated_at,
+			p.published_at,
+			p.rejected_reason,
+			p.created_at,
+			p.updated_at
+		`).
+		Where("p.id = ?", playUUID).
+		Take(&row).Error
+	if err != nil {
+		return SubmissionRecord{}, err
+	}
+
+	records := mapSubmissionRows([]submissionRow{row})
+	if len(records) == 0 {
+		return SubmissionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return records[0], nil
+}
+
+func (r *Repository) getReviewByID(ctx context.Context, reviewID uuid.UUID) (ReviewRecord, error) {
+	var row reviewRow
+	err := r.db.WithContext(ctx).
+		Table("app.reviews AS r").
+		Select(`
+			r.id,
+			r.user_id,
+			u.display_name,
+			r.rating,
+			r.title,
+			r.body,
+			r.contains_spoilers,
+			r.created_at,
+			r.updated_at
+		`).
+		Joins("JOIN app.users AS u ON u.id = r.user_id").
+		Where("r.id = ?", reviewID).
+		Take(&row).Error
+	if err != nil {
+		return ReviewRecord{}, err
+	}
+
+	return ReviewRecord{
+		ID:               row.ID.String(),
+		UserID:           row.UserID.String(),
+		DisplayName:      row.DisplayName,
+		Rating:           int(row.Rating),
+		Title:            row.Title,
+		Body:             row.Body,
+		ContainsSpoilers: row.ContainsSpoilers,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+	}, nil
+}
+
 func (r *Repository) ensureDB() error {
 	if r == nil || r.db == nil {
 		return gorm.ErrInvalidDB
@@ -367,6 +1151,25 @@ type playDetailsRow struct {
 	ReviewCount        int64     `gorm:"column:review_count"`
 }
 
+type submissionRow struct {
+	ID                 uuid.UUID  `gorm:"column:id"`
+	Title              string     `gorm:"column:title"`
+	Synopsis           string     `gorm:"column:synopsis"`
+	Director           string     `gorm:"column:director"`
+	DurationMinutes    int        `gorm:"column:duration_minutes"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	CurationStatus     string     `gorm:"column:curation_status"`
+	CreatedByUserID    uuid.UUID  `gorm:"column:created_by_user_id"`
+	ModeratedByUserID  *uuid.UUID `gorm:"column:moderated_by_user_id"`
+	ModeratedAt        *time.Time `gorm:"column:moderated_at"`
+	PublishedAt        *time.Time `gorm:"column:published_at"`
+	RejectedReason     *string    `gorm:"column:rejected_reason"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
+}
+
 type playGenreRow struct {
 	ID   uuid.UUID `gorm:"column:id"`
 	Name string    `gorm:"column:name"`
@@ -383,6 +1186,103 @@ type playMediaRow struct {
 	URL       string  `gorm:"column:url"`
 	AltText   *string `gorm:"column:alt_text"`
 	SortOrder int     `gorm:"column:sort_order"`
+}
+
+type reviewRow struct {
+	ID               uuid.UUID `gorm:"column:id"`
+	UserID           uuid.UUID `gorm:"column:user_id"`
+	DisplayName      string    `gorm:"column:display_name"`
+	Rating           int16     `gorm:"column:rating"`
+	Title            *string   `gorm:"column:title"`
+	Body             string    `gorm:"column:body"`
+	ContainsSpoilers bool      `gorm:"column:contains_spoilers"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
+}
+
+type reviewMetadataRow struct {
+	ReviewID           uuid.UUID `gorm:"column:id"`
+	PlayID             uuid.UUID `gorm:"column:play_id"`
+	UserID             uuid.UUID `gorm:"column:user_id"`
+	ReviewStatus       string    `gorm:"column:status"`
+	PlayCurationStatus string    `gorm:"column:curation_status"`
+}
+
+type reviewCommentRow struct {
+	ID          uuid.UUID `gorm:"column:id"`
+	ReviewID    uuid.UUID `gorm:"column:review_id"`
+	UserID      uuid.UUID `gorm:"column:user_id"`
+	DisplayName string    `gorm:"column:display_name"`
+	Body        string    `gorm:"column:body"`
+	CreatedAt   time.Time `gorm:"column:created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
+}
+
+type reviewEntity struct {
+	ID               uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	PlayID           uuid.UUID `gorm:"column:play_id;type:uuid"`
+	UserID           uuid.UUID `gorm:"column:user_id;type:uuid"`
+	Rating           int16     `gorm:"column:rating"`
+	Title            *string   `gorm:"column:title"`
+	Body             string    `gorm:"column:body"`
+	ContainsSpoilers bool      `gorm:"column:contains_spoilers"`
+	Status           string    `gorm:"column:status"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
+}
+
+type playEntity struct {
+	ID                 uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	Title              string     `gorm:"column:title"`
+	Synopsis           string     `gorm:"column:synopsis"`
+	Director           string     `gorm:"column:director"`
+	DurationMinutes    int        `gorm:"column:duration_minutes"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	CurationStatus     string     `gorm:"column:curation_status"`
+	CreatedByUserID    uuid.UUID  `gorm:"column:created_by_user_id;type:uuid"`
+	ModeratedByUserID  *uuid.UUID `gorm:"column:moderated_by_user_id;type:uuid"`
+	ModeratedAt        *time.Time `gorm:"column:moderated_at"`
+	PublishedAt        *time.Time `gorm:"column:published_at"`
+	RejectedReason     *string    `gorm:"column:rejected_reason"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
+}
+
+func (playEntity) TableName() string {
+	return "app.plays"
+}
+
+func (reviewEntity) TableName() string {
+	return "app.reviews"
+}
+
+type reviewCommentEntity struct {
+	ID              uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	ReviewID        uuid.UUID  `gorm:"column:review_id;type:uuid"`
+	UserID          uuid.UUID  `gorm:"column:user_id;type:uuid"`
+	ParentCommentID *uuid.UUID `gorm:"column:parent_comment_id;type:uuid"`
+	Body            string     `gorm:"column:body"`
+	Status          string     `gorm:"column:status"`
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at"`
+}
+
+func (reviewCommentEntity) TableName() string {
+	return "app.review_comments"
+}
+
+type userPlayEngagementEntity struct {
+	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	UserID    uuid.UUID `gorm:"column:user_id;type:uuid"`
+	PlayID    uuid.UUID `gorm:"column:play_id;type:uuid"`
+	Kind      string    `gorm:"column:kind"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (userPlayEngagementEntity) TableName() string {
+	return "app.user_play_engagements"
 }
 
 func parseUUID(raw string) (uuid.UUID, error) {
