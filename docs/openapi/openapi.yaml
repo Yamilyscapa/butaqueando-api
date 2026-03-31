@@ -9,6 +9,7 @@ info:
     stable in the codebase:
     - system root
     - health/readiness
+    - plays read endpoints (feed, search, details)
     - auth (sign-up, sign-in, refresh, sign-out)
     - users profile endpoints (/users/me and public profile)
     - follows (follow/unfollow and follow graph listings)
@@ -20,6 +21,7 @@ servers:
 tags:
   - name: system
   - name: health
+  - name: plays
   - name: auth
   - name: users
   - name: follows
@@ -97,6 +99,147 @@ paths:
                       details:
                         database: false
                     requestId: req-99d4f39646e94d65bd5ac744cf8a6c89
+
+  /v1/feed:
+    get:
+      tags: [plays]
+      summary: List discovery feed plays
+      description: |
+        Returns published plays for feed sections.
+
+        Supported sections:
+        - `highlighted`
+        - `trending`
+        - `genre` (requires `genreId`)
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: section
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [highlighted, trending, genre]
+        - name: genreId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Feed list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/search:
+    get:
+      tags: [plays]
+      summary: Search published plays
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: genreId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: theater
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: availabilityStatus
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [in_theaters, archive]
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Search results loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/plays/{playId}:
+    get:
+      tags: [plays]
+      summary: Get published play details
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Play details loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayDetailsSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /v1/auth/sign-up:
     post:
@@ -818,6 +961,167 @@ components:
           type: string
           format: date-time
 
+    PlayCardData:
+      type: object
+      required:
+        - id
+        - title
+        - theaterName
+        - availabilityStatus
+        - publishedAt
+        - reviewCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        publishedAt:
+          type: string
+          format: date-time
+        posterUrl:
+          type: string
+          nullable: true
+        averageRating:
+          type: number
+          format: float
+          nullable: true
+        reviewCount:
+          type: integer
+          format: int64
+
+    PlayListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayCardData'
+        nextCursor:
+          type: string
+          nullable: true
+
+    PlayStatsData:
+      type: object
+      required:
+        - reviewCount
+      properties:
+        averageRating:
+          type: number
+          format: float
+          nullable: true
+        reviewCount:
+          type: integer
+          format: int64
+
+    PlayGenreData:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    PlayCastMemberData:
+      type: object
+      required:
+        - personName
+        - roleName
+        - billingOrder
+      properties:
+        personName:
+          type: string
+        roleName:
+          type: string
+        billingOrder:
+          type: integer
+
+    PlayMediaData:
+      type: object
+      required:
+        - kind
+        - url
+        - sortOrder
+      properties:
+        kind:
+          type: string
+          enum: [poster, photo]
+        url:
+          type: string
+          format: uri
+        altText:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+
+    PlayDetailsData:
+      type: object
+      required:
+        - id
+        - title
+        - synopsis
+        - director
+        - durationMinutes
+        - theaterName
+        - availabilityStatus
+        - publishedAt
+        - stats
+        - genres
+        - cast
+        - media
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        synopsis:
+          type: string
+        director:
+          type: string
+        durationMinutes:
+          type: integer
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        publishedAt:
+          type: string
+          format: date-time
+        stats:
+          $ref: '#/components/schemas/PlayStatsData'
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayGenreData'
+        cast:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayCastMemberData'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayMediaData'
+
     ProfileStatsData:
       type: object
       required:
@@ -1082,6 +1386,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/HealthData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    PlayListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/PlayListData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    PlayDetailsSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/PlayDetailsData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:
