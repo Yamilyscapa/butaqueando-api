@@ -12,10 +12,15 @@ type Dependencies struct {
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
-	handler := NewHandler(deps)
+	repo := NewRepository(deps.DB)
+	service := NewService(repo)
+	handler := NewHandler(service)
+
+	v1.GET("/feed", handler.Feed)
+	v1.GET("/search", handler.Search)
+
 	group := v1.Group(BasePath)
 
-	group.GET("", handler.List)
 	group.GET("/:playId", handler.GetByID)
 	group.GET("/:playId/reviews", handler.ListReviews)
 	group.POST("/:playId/reviews", handler.CreateReview)
