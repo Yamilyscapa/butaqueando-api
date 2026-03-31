@@ -67,7 +67,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	})
 	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB})
-	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB})
+	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 
 	return router
 }

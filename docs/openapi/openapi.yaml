@@ -11,6 +11,7 @@ info:
     - health/readiness
     - auth (sign-up, sign-in, refresh, sign-out)
     - users profile endpoints (/users/me and public profile)
+    - follows (follow/unfollow and follow graph listings)
 
 servers:
   - url: http://localhost:3000
@@ -21,6 +22,7 @@ tags:
   - name: health
   - name: auth
   - name: users
+  - name: follows
 
 paths:
   /:
@@ -434,6 +436,208 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/users/{userId}/follow:
+    post:
+      tags: [follows]
+      summary: Follow a user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Follow state applied
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowActionSuccessEnvelope'
+              examples:
+                followed:
+                  value:
+                    data:
+                      userId: 00000000-0000-0000-0000-000000000003
+                      following: true
+                    error: null
+                    requestId: req-6c44aaef5f424ad7b2f6f9893ec0a5f6
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [follows]
+      summary: Unfollow a user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Follow state removed
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowActionSuccessEnvelope'
+              examples:
+                unfollowed:
+                  value:
+                    data:
+                      userId: 00000000-0000-0000-0000-000000000003
+                      following: false
+                    error: null
+                    requestId: req-2d874f7fb9b84fbbbdf35a4a3dbfcf28
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{userId}/followers:
+    get:
+      tags: [follows]
+      summary: List followers for a user
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Followers list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{userId}/followings:
+    get:
+      tags: [follows]
+      summary: List followings for a user
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Followings list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/followings:
+    get:
+      tags: [follows]
+      summary: List followings for authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Followings list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   parameters:
     XRequestID:
@@ -690,6 +894,50 @@ components:
           type: string
           maxLength: 500
 
+    FollowActionData:
+      type: object
+      required:
+        - userId
+        - following
+      properties:
+        userId:
+          type: string
+          format: uuid
+        following:
+          type: boolean
+
+    FollowListItemData:
+      type: object
+      required:
+        - id
+        - displayName
+        - followedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        followedAt:
+          type: string
+          format: date-time
+
+    FollowListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FollowListItemData'
+        nextCursor:
+          type: string
+          nullable: true
+
     SignUpRequest:
       type: object
       required:
@@ -904,6 +1152,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/MeProfileData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    FollowActionSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/FollowActionData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    FollowListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/FollowListData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:
