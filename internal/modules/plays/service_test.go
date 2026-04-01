@@ -314,6 +314,138 @@ func TestServiceFeedBuildsNextCursor(t *testing.T) {
 	}
 }
 
+func TestServiceFeedTrendingBuildsSectionCursor(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	service := NewService(&fakeRepository{listFeedFn: func(ctx context.Context, params FeedListParams) ([]PlayListRecord, error) {
+		if params.Section != "trending" {
+			t.Fatalf("expected trending section, got %q", params.Section)
+		}
+
+		if params.TrendingAfter != nil {
+			t.Fatalf("expected nil trending cursor on first page")
+		}
+
+		if params.After != nil {
+			t.Fatalf("expected standard cursor to be nil for trending")
+		}
+
+		return []PlayListRecord{
+			{ID: "00000000-0000-0000-0000-000000000211", Title: "A", TheaterName: "T1", AvailabilityStatus: "in_theaters", PublishedAt: now, TrendScore: 17},
+			{ID: "00000000-0000-0000-0000-000000000212", Title: "B", TheaterName: "T2", AvailabilityStatus: "in_theaters", PublishedAt: now.Add(-time.Minute), TrendScore: 8},
+		}, nil
+	}})
+
+	data, err := service.Feed(context.Background(), FeedQuery{Section: "trending", Limit: 1})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if data.NextCursor == nil || *data.NextCursor == "" {
+		t.Fatalf("expected next cursor")
+	}
+
+	decoded, err := decodeTrendingFeedCursor(*data.NextCursor)
+	if err != nil {
+		t.Fatalf("expected valid trending cursor, got error: %v", err)
+	}
+
+	if decoded.Section != "trending" {
+		t.Fatalf("expected cursor section trending, got %q", decoded.Section)
+	}
+
+	if decoded.TrendScore != 17 {
+		t.Fatalf("expected trend score 17, got %d", decoded.TrendScore)
+	}
+}
+
+func TestServiceFeedTrendingRejectsNonTrendingCursor(t *testing.T) {
+	t.Parallel()
+
+	cursor, err := encodePlayListCursor(playListCursor{PublishedAt: time.Now().UTC(), PlayID: "00000000-0000-0000-0000-000000000201"})
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
+	}
+
+	service := NewService(&fakeRepository{})
+	_, err = service.Feed(context.Background(), FeedQuery{Section: "trending", Cursor: cursor})
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceFeedTrendingParsesCursorIntoRepositoryParams(t *testing.T) {
+	t.Parallel()
+
+	publishedAt := time.Now().UTC().Add(-2 * time.Hour)
+	cursor, err := encodeTrendingFeedCursor(trendingFeedCursor{
+		Section:     "trending",
+		TrendScore:  11,
+		PublishedAt: publishedAt,
+		PlayID:      "00000000-0000-0000-0000-000000000299",
+	})
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
+	}
+
+	service := NewService(&fakeRepository{listFeedFn: func(ctx context.Context, params FeedListParams) ([]PlayListRecord, error) {
+		if params.TrendingAfter == nil {
+			t.Fatalf("expected trending cursor to be decoded")
+		}
+
+		if params.TrendingAfter.TrendScore != 11 {
+			t.Fatalf("expected trend score 11, got %d", params.TrendingAfter.TrendScore)
+		}
+
+		if !params.TrendingAfter.PublishedAt.Equal(publishedAt) {
+			t.Fatalf("expected cursor publishedAt to match")
+		}
+
+		if params.TrendingAfter.PlayID != "00000000-0000-0000-0000-000000000299" {
+			t.Fatalf("unexpected cursor playId: %q", params.TrendingAfter.PlayID)
+		}
+
+		return []PlayListRecord{}, nil
+	}})
+
+	_, err = service.Feed(context.Background(), FeedQuery{Section: "trending", Cursor: cursor, Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
+func TestServiceFeedTrendingAcceptsGenreFilter(t *testing.T) {
+	t.Parallel()
+
+	genreID := "00000000-0000-0000-0000-000000000101"
+	service := NewService(&fakeRepository{listFeedFn: func(ctx context.Context, params FeedListParams) ([]PlayListRecord, error) {
+		if params.Section != "trending" {
+			t.Fatalf("expected trending section, got %q", params.Section)
+		}
+
+		if params.GenreID == nil || *params.GenreID != genreID {
+			t.Fatalf("expected trending genreId filter to be forwarded")
+		}
+
+		return []PlayListRecord{}, nil
+	}})
+
+	_, err := service.Feed(context.Background(), FeedQuery{Section: "trending", GenreID: genreID, Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
 func TestServiceSearchRequiresAtLeastOneFilter(t *testing.T) {
 	t.Parallel()
 

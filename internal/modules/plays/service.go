@@ -85,22 +85,34 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 		return FeedData{}, err
 	}
 
-	cursor, err := decodePlayListCursor(strings.TrimSpace(query.Cursor))
-	if err != nil {
-		return FeedData{}, sharederrors.Validation("invalid cursor", nil)
+	rawCursor := strings.TrimSpace(query.Cursor)
+
+	var cursor *playListCursor
+	var trendingCursor *trendingFeedCursor
+	if section == "trending" {
+		trendingCursor, err = decodeTrendingFeedCursor(rawCursor)
+		if err != nil {
+			return FeedData{}, sharederrors.Validation("invalid cursor", nil)
+		}
+	} else {
+		cursor, err = decodePlayListCursor(rawCursor)
+		if err != nil {
+			return FeedData{}, sharederrors.Validation("invalid cursor", nil)
+		}
 	}
 
 	records, err := s.repo.ListFeed(ctx, FeedListParams{
-		Section: section,
-		GenreID: genreID,
-		After:   cursor,
-		Limit:   limit + 1,
+		Section:       section,
+		GenreID:       genreID,
+		After:         cursor,
+		TrendingAfter: trendingCursor,
+		Limit:         limit + 1,
 	})
 	if err != nil {
 		return FeedData{}, sharederrors.Internal("failed to load feed", nil)
 	}
 
-	return buildPlayListData(records, limit)
+	return buildFeedData(records, limit, section)
 }
 
 func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, error) {
@@ -815,6 +827,52 @@ func buildPlayListData(records []PlayListRecord, limit int) (FeedData, error) {
 	response := FeedData{Items: items}
 	if hasNext && len(records) > 0 {
 		last := records[len(records)-1]
+		nextCursor, err := encodePlayListCursor(playListCursor{PublishedAt: last.PublishedAt.UTC(), PlayID: last.ID})
+		if err != nil {
+			return FeedData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
+}
+
+func buildFeedData(records []PlayListRecord, limit int, section string) (FeedData, error) {
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]PlayCardData, 0, len(records))
+	for _, record := range records {
+		items = append(items, PlayCardData{
+			ID:                 record.ID,
+			Title:              record.Title,
+			TheaterName:        record.TheaterName,
+			City:               record.City,
+			AvailabilityStatus: record.AvailabilityStatus,
+			PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
+			PosterURL:          record.PosterURL,
+			AverageRating:      record.AverageRating,
+			ReviewCount:        record.ReviewCount,
+		})
+	}
+
+	response := FeedData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+
+		if section == "trending" {
+			nextCursor, err := encodeTrendingFeedCursor(trendingFeedCursor{Section: "trending", TrendScore: last.TrendScore, PublishedAt: last.PublishedAt.UTC(), PlayID: last.ID})
+			if err != nil {
+				return FeedData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+			}
+
+			response.NextCursor = &nextCursor
+			return response, nil
+		}
+
 		nextCursor, err := encodePlayListCursor(playListCursor{PublishedAt: last.PublishedAt.UTC(), PlayID: last.ID})
 		if err != nil {
 			return FeedData{}, sharederrors.Internal("failed to build pagination cursor", nil)

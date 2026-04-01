@@ -109,7 +109,7 @@ paths:
 
         Supported sections:
         - `highlighted`
-        - `trending`
+        - `trending` (supports optional `genreId` filter)
         - `genre` (requires `genreId`)
       parameters:
         - $ref: '#/components/parameters/XRequestID'
@@ -122,12 +122,14 @@ paths:
         - name: genreId
           in: query
           required: false
+          description: Required when `section=genre`; optional filter when `section=trending`.
           schema:
             type: string
             format: uuid
         - name: cursor
           in: query
           required: false
+          description: Opaque cursor. For `section=trending`, cursor payload is section-specific and must be reused only with `section=trending`.
           schema:
             type: string
         - name: limit

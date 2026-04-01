@@ -82,6 +82,7 @@ Theater information and social opinion are fragmented. Users need one place to:
   - `highlighted`
   - `trending`
   - categorized lists (genre/city/theater)
+- Trending feed accepts optional `genreId` filtering while preserving stable cursor pagination order.
 - Only `published` plays are visible in public feed.
 
 ### FR-03 Search

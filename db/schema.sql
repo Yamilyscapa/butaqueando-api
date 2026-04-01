@@ -28,6 +28,7 @@
 \ir triggers/play_curation_transition_trigger.sql
 
 \ir indexes/plays.sql
+\ir indexes/play_genres.sql
 \ir indexes/play_cast_members.sql
 \ir indexes/reviews.sql
 \ir indexes/review_comments.sql

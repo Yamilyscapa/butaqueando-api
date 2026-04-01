@@ -12,10 +12,11 @@ import (
 )
 
 type FeedListParams struct {
-	Section string
-	GenreID *string
-	After   *playListCursor
-	Limit   int
+	Section       string
+	GenreID       *string
+	After         *playListCursor
+	TrendingAfter *trendingFeedCursor
+	Limit         int
 }
 
 type SearchListParams struct {
@@ -54,12 +55,68 @@ func (r *Repository) ListFeed(ctx context.Context, params FeedListParams) ([]Pla
 	}
 
 	query := r.basePlayListQuery(ctx)
+	trendScoreSQL := `(
+		COALESCE(trending_attended.recent_attended_count, 0) * 4 +
+		COALESCE(trending_reviews.recent_review_count, 0) * 3 +
+		COALESCE(trending_wishlist.recent_wishlist_count, 0) * 2
+	)`
 
 	switch params.Section {
 	case "highlighted":
 		query = query.Order("COALESCE(prs.review_count, 0) DESC")
 	case "trending":
-		query = query.Where("p.published_at >= ?", time.Now().UTC().Add(-30*24*time.Hour)).Order("COALESCE(prs.review_count, 0) DESC")
+		now := time.Now().UTC()
+		trendingSince := now.Add(-14 * 24 * time.Hour)
+
+		query = query.
+			Where("p.published_at >= ?", now.Add(-30*24*time.Hour)).
+			Select(`
+				p.id,
+				p.title,
+				p.theater_name,
+				p.city,
+				p.availability_status,
+				p.published_at,
+				prs.avg_rating,
+				COALESCE(prs.review_count, 0) AS review_count,
+				`+trendScoreSQL+` AS trend_score,
+				media.poster_url
+			`).
+			Joins(`
+				LEFT JOIN (
+					SELECT r.play_id, COUNT(*)::bigint AS recent_review_count
+					FROM app.reviews AS r
+					WHERE r.status = 'published' AND r.created_at >= ?
+					GROUP BY r.play_id
+				) AS trending_reviews ON trending_reviews.play_id = p.id
+			`, trendingSince).
+			Joins(`
+				LEFT JOIN (
+					SELECT e.play_id, COUNT(*)::bigint AS recent_wishlist_count
+					FROM app.user_play_engagements AS e
+					WHERE e.kind = 'wishlist' AND e.created_at >= ?
+					GROUP BY e.play_id
+				) AS trending_wishlist ON trending_wishlist.play_id = p.id
+			`, trendingSince).
+			Joins(`
+				LEFT JOIN (
+					SELECT e.play_id, COUNT(*)::bigint AS recent_attended_count
+					FROM app.user_play_engagements AS e
+					WHERE e.kind = 'attended' AND e.created_at >= ?
+					GROUP BY e.play_id
+				) AS trending_attended ON trending_attended.play_id = p.id
+			`, trendingSince)
+
+		if params.GenreID != nil {
+			genreUUID, err := parseUUID(*params.GenreID)
+			if err != nil {
+				return nil, err
+			}
+
+			query = query.
+				Joins("JOIN app.play_genres AS pg_filter ON pg_filter.play_id = p.id").
+				Where("pg_filter.genre_id = ?", genreUUID)
+		}
 	case "genre":
 		if params.GenreID != nil {
 			genreUUID, err := parseUUID(*params.GenreID)
@@ -73,17 +130,34 @@ func (r *Repository) ListFeed(ctx context.Context, params FeedListParams) ([]Pla
 		}
 	}
 
-	query, err := applyPlayListCursor(query, params.After)
-	if err != nil {
-		return nil, err
+	var err error
+	if params.Section == "trending" {
+		query, err = applyTrendingFeedCursor(query, params.TrendingAfter, trendScoreSQL)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		query, err = applyPlayListCursor(query, params.After)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var rows []playListRow
-	err = query.
-		Order("p.published_at DESC").
-		Order("p.id DESC").
-		Limit(params.Limit).
-		Scan(&rows).Error
+	if params.Section == "trending" {
+		err = query.
+			Order("trend_score DESC").
+			Order("p.published_at DESC").
+			Order("p.id DESC").
+			Limit(params.Limit).
+			Scan(&rows).Error
+	} else {
+		err = query.
+			Order("p.published_at DESC").
+			Order("p.id DESC").
+			Limit(params.Limit).
+			Scan(&rows).Error
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1149,6 +1223,7 @@ func (r *Repository) basePlayListQuery(ctx context.Context) *gorm.DB {
 			p.published_at,
 			prs.avg_rating,
 			COALESCE(prs.review_count, 0) AS review_count,
+			0::bigint AS trend_score,
 			media.poster_url
 		`).
 		Joins("LEFT JOIN app.play_rating_stats AS prs ON prs.play_id = p.id").
@@ -1177,6 +1252,27 @@ func applyPlayListCursor(query *gorm.DB, after *playListCursor) (*gorm.DB, error
 	return query.Where(
 		"(p.published_at < ?) OR (p.published_at = ? AND p.id < ?)",
 		after.PublishedAt,
+		after.PublishedAt,
+		playUUID,
+	), nil
+}
+
+func applyTrendingFeedCursor(query *gorm.DB, after *trendingFeedCursor, trendScoreSQL string) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	playUUID, err := parseUUID(after.PlayID)
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		fmt.Sprintf("(%s < ?) OR (%s = ? AND p.published_at < ?) OR (%s = ? AND p.published_at = ? AND p.id < ?)", trendScoreSQL, trendScoreSQL, trendScoreSQL),
+		after.TrendScore,
+		after.TrendScore,
+		after.PublishedAt,
+		after.TrendScore,
 		after.PublishedAt,
 		playUUID,
 	), nil
@@ -1213,6 +1309,7 @@ func mapPlayListRows(rows []playListRow) []PlayListRecord {
 			PosterURL:          row.PosterURL,
 			AverageRating:      row.AverageRating,
 			ReviewCount:        row.ReviewCount,
+			TrendScore:         row.TrendScore,
 		})
 	}
 
@@ -1378,6 +1475,7 @@ type playListRow struct {
 	PublishedAt        time.Time `gorm:"column:published_at"`
 	AverageRating      *float64  `gorm:"column:avg_rating"`
 	ReviewCount        int64     `gorm:"column:review_count"`
+	TrendScore         int64     `gorm:"column:trend_score"`
 	PosterURL          *string   `gorm:"column:poster_url"`
 }
 

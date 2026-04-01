@@ -274,6 +274,7 @@ type PlayListRecord struct {
 	PosterURL          *string
 	AverageRating      *float64
 	ReviewCount        int64
+	TrendScore         int64
 }
 
 type EngagementPlayRecord struct {
@@ -465,6 +466,13 @@ type playListCursor struct {
 	PlayID      string    `json:"playId"`
 }
 
+type trendingFeedCursor struct {
+	Section     string    `json:"section"`
+	TrendScore  int64     `json:"trendScore"`
+	PublishedAt time.Time `json:"publishedAt"`
+	PlayID      string    `json:"playId"`
+}
+
 type reviewListCursor struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ReviewID  string    `json:"reviewId"`
@@ -505,6 +513,37 @@ func decodePlayListCursor(raw string) (*playListCursor, error) {
 	}
 
 	if cursor.PublishedAt.IsZero() || cursor.PlayID == "" {
+		return nil, fmt.Errorf("invalid cursor payload")
+	}
+
+	return &cursor, nil
+}
+
+func encodeTrendingFeedCursor(cursor trendingFeedCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal cursor: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeTrendingFeedCursor(raw string) (*trendingFeedCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode cursor: %w", err)
+	}
+
+	var cursor trendingFeedCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("unmarshal cursor: %w", err)
+	}
+
+	if cursor.Section != "trending" || cursor.PublishedAt.IsZero() || cursor.PlayID == "" {
 		return nil, fmt.Errorf("invalid cursor payload")
 	}
 
