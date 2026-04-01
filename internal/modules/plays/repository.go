@@ -626,6 +626,46 @@ func (r *Repository) CreateReviewComment(ctx context.Context, userID string, rev
 	}, nil
 }
 
+func (r *Repository) UpdateReviewCommentStatus(ctx context.Context, commentID string, status string, updatedAt time.Time) (ReviewCommentStatusRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return ReviewCommentStatusRecord{}, err
+	}
+
+	commentUUID, err := parseUUID(commentID)
+	if err != nil {
+		return ReviewCommentStatusRecord{}, err
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&reviewCommentEntity{}).
+		Where("id = ?", commentUUID).
+		Updates(map[string]any{"status": status, "updated_at": updatedAt})
+	if result.Error != nil {
+		return ReviewCommentStatusRecord{}, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return ReviewCommentStatusRecord{}, gorm.ErrRecordNotFound
+	}
+
+	var row reviewCommentStatusRow
+	err = r.db.WithContext(ctx).
+		Table("app.review_comments").
+		Select("id, review_id, status, updated_at").
+		Where("id = ?", commentUUID).
+		Take(&row).Error
+	if err != nil {
+		return ReviewCommentStatusRecord{}, err
+	}
+
+	return ReviewCommentStatusRecord{
+		ID:        row.ID.String(),
+		ReviewID:  row.ReviewID.String(),
+		Status:    row.Status,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
 func (r *Repository) SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error {
 	if err := r.ensureDB(); err != nil {
 		return err
@@ -1450,6 +1490,13 @@ type reviewCommentRow struct {
 	Body        string    `gorm:"column:body"`
 	CreatedAt   time.Time `gorm:"column:created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at"`
+}
+
+type reviewCommentStatusRow struct {
+	ID        uuid.UUID `gorm:"column:id"`
+	ReviewID  uuid.UUID `gorm:"column:review_id"`
+	Status    string    `gorm:"column:status"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 type reviewEntity struct {

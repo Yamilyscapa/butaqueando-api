@@ -21,6 +21,7 @@ type fakeService struct {
 	createReviewFn  func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
 	updateReviewFn  func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
 	createCommentFn func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	updateCommentFn func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
 	listUserWatchFn func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	listUserRevFn   func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	createSubFn     func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
@@ -90,6 +91,14 @@ func (f *fakeService) CreateReviewComment(ctx context.Context, userID string, re
 	}
 
 	return ReviewCommentData{}, nil
+}
+
+func (f *fakeService) UpdateReviewCommentStatus(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error) {
+	if f.updateCommentFn != nil {
+		return f.updateCommentFn(ctx, userID, role, commentID, req)
+	}
+
+	return ReviewCommentStatusData{}, nil
 }
 
 func (f *fakeService) ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
@@ -394,6 +403,49 @@ func TestHandlerCreateReviewCommentSuccess(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerUpdateReviewCommentStatusRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.PATCH("/v1/admin/review-comments/:commentId/status", handler.UpdateReviewCommentStatus)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/admin/review-comments/00000000-0000-0000-0000-000000000701/status", strings.NewReader(`{"status":"hidden"}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerUpdateReviewCommentStatusSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{updateCommentFn: func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error) {
+		return ReviewCommentStatusData{ID: commentID, ReviewID: "00000000-0000-0000-0000-000000000501", Status: req.Status, UpdatedAt: "2026-01-01T00:00:00Z"}, nil
+	}})
+	router.PATCH("/v1/admin/review-comments/:commentId/status", handler.UpdateReviewCommentStatus)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/admin/review-comments/00000000-0000-0000-0000-000000000701/status", strings.NewReader(`{"status":"hidden"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }
 

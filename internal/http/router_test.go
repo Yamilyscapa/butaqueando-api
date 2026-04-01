@@ -365,3 +365,32 @@ func TestRouterMyReviewsRequiresAuthorization(t *testing.T) {
 		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
 	}
 }
+
+func TestRouterAdminReviewCommentModerationRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/admin/review-comments/00000000-0000-0000-0000-000000000701/status", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-review-comment-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+
+	var body httpx.ResponseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Error == nil {
+		t.Fatalf("expected error payload")
+	}
+
+	if body.Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
+	}
+}

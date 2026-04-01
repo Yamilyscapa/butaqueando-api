@@ -825,6 +825,47 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/admin/review-comments/{commentId}/status:
+    patch:
+      tags: [plays]
+      summary: Update review comment moderation status
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewCommentStatusRequest'
+      responses:
+        '200':
+          description: Review comment status updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCommentStatusSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/auth/sign-up:
     post:
       tags: [auth]
@@ -1925,6 +1966,15 @@ components:
         body:
           type: string
 
+    UpdateReviewCommentStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [published, hidden]
+
     SetEngagementRequest:
       type: object
       required:
@@ -2012,6 +2062,27 @@ components:
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ReviewCommentStatusData:
+      type: object
+      required:
+        - id
+        - reviewId
+        - status
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [published, hidden]
         updatedAt:
           type: string
           format: date-time
@@ -2626,6 +2697,20 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ReviewCommentData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ReviewCommentStatusSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ReviewCommentStatusData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

@@ -18,6 +18,7 @@ type servicePort interface {
 	CreateReview(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
 	UpdateReview(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
 	CreateReviewComment(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	UpdateReviewCommentStatus(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
 	ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	ListUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
@@ -201,6 +202,29 @@ func (h *Handler) CreateReviewComment(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) UpdateReviewCommentStatus(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req UpdateReviewCommentStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.UpdateReviewCommentStatus(c.Request.Context(), userID, role, c.Param("commentId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListUserWatched(c *gin.Context) {

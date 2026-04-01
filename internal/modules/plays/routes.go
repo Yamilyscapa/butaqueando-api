@@ -59,4 +59,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminSubmissions.GET("/plays", handler.ListAdminSubmissions)
 	adminSubmissions.POST("/plays/:playId/approve", handler.ApproveSubmission)
 	adminSubmissions.POST("/plays/:playId/reject", handler.RejectSubmission)
+
+	adminReviewComments := v1.Group("/admin/review-comments")
+	adminReviewComments.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminReviewComments.PATCH("/:commentId/status", handler.UpdateReviewCommentStatus)
 }

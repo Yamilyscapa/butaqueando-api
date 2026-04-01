@@ -25,6 +25,7 @@ type fakeRepository struct {
 	getReviewMetadataFn    func(ctx context.Context, reviewID string) (ReviewMetadataRecord, error)
 	updateReviewFn         func(ctx context.Context, reviewID string, params UpdateReviewParams) (ReviewRecord, error)
 	createCommentFn        func(ctx context.Context, userID string, reviewID string, params CreateReviewCommentParams) (ReviewCommentRecord, error)
+	updateCommentStatusFn  func(ctx context.Context, commentID string, status string, updatedAt time.Time) (ReviewCommentStatusRecord, error)
 	createSubmissionFn     func(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error)
 	listUserSubmissionsFn  func(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	getSubmissionByIDFn    func(ctx context.Context, playID string) (SubmissionRecord, error)
@@ -148,6 +149,14 @@ func (f *fakeRepository) CreateReviewComment(ctx context.Context, userID string,
 	}
 
 	return ReviewCommentRecord{}, nil
+}
+
+func (f *fakeRepository) UpdateReviewCommentStatus(ctx context.Context, commentID string, status string, updatedAt time.Time) (ReviewCommentStatusRecord, error) {
+	if f.updateCommentStatusFn != nil {
+		return f.updateCommentStatusFn(ctx, commentID, status, updatedAt)
+	}
+
+	return ReviewCommentStatusRecord{}, nil
 }
 
 func (f *fakeRepository) CreateSubmission(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error) {
@@ -769,6 +778,65 @@ func TestServiceCreateReviewCommentSuccess(t *testing.T) {
 
 	if data.ID == "" || data.Body != "Great point" {
 		t.Fatalf("expected created comment payload")
+	}
+}
+
+func TestServiceUpdateReviewCommentStatusRequiresAdmin(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.UpdateReviewCommentStatus(context.Background(), "00000000-0000-0000-0000-000000000001", "user", "00000000-0000-0000-0000-000000000701", UpdateReviewCommentStatusRequest{Status: "hidden"})
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceUpdateReviewCommentStatusRejectsInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.UpdateReviewCommentStatus(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000701", UpdateReviewCommentStatusRequest{Status: "removed"})
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceUpdateReviewCommentStatusSuccess(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{updateCommentStatusFn: func(ctx context.Context, commentID string, status string, updatedAt time.Time) (ReviewCommentStatusRecord, error) {
+		if status != "hidden" {
+			t.Fatalf("expected hidden status")
+		}
+
+		return ReviewCommentStatusRecord{ID: commentID, ReviewID: "00000000-0000-0000-0000-000000000501", Status: status, UpdatedAt: updatedAt}, nil
+	}})
+
+	data, err := service.UpdateReviewCommentStatus(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000701", UpdateReviewCommentStatusRequest{Status: "hidden"})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if data.Status != "hidden" {
+		t.Fatalf("expected hidden status")
 	}
 }
 

@@ -63,6 +63,10 @@ type CreateReviewCommentRequest struct {
 	Body string `json:"body"`
 }
 
+type UpdateReviewCommentStatusRequest struct {
+	Status string `json:"status"`
+}
+
 type CreateSubmissionRequest struct {
 	Title              string  `json:"title"`
 	Synopsis           string  `json:"synopsis"`
@@ -177,6 +181,13 @@ type ReviewCommentData struct {
 	Body        string `json:"body"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
+}
+
+type ReviewCommentStatusData struct {
+	ID        string `json:"id"`
+	ReviewID  string `json:"reviewId"`
+	Status    string `json:"status"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 type SubmissionData struct {
@@ -435,6 +446,13 @@ type ReviewCommentRecord struct {
 	Body        string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type ReviewCommentStatusRecord struct {
+	ID        string
+	ReviewID  string
+	Status    string
+	UpdatedAt time.Time
 }
 
 type EngagementStateRecord struct {

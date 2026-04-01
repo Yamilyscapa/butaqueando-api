@@ -33,6 +33,7 @@ type repositoryPort interface {
 	GetReviewMetadata(ctx context.Context, reviewID string) (ReviewMetadataRecord, error)
 	UpdateReview(ctx context.Context, reviewID string, params UpdateReviewParams) (ReviewRecord, error)
 	CreateReviewComment(ctx context.Context, userID string, reviewID string, params CreateReviewCommentParams) (ReviewCommentRecord, error)
+	UpdateReviewCommentStatus(ctx context.Context, commentID string, status string, updatedAt time.Time) (ReviewCommentStatusRecord, error)
 	CreateSubmission(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error)
 	ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	GetSubmissionByID(ctx context.Context, playID string) (SubmissionRecord, error)
@@ -406,6 +407,36 @@ func (s *Service) CreateReviewComment(ctx context.Context, userID string, review
 	}
 
 	return mapReviewCommentRecord(record), nil
+}
+
+func (s *Service) UpdateReviewCommentStatus(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error) {
+	if !isValidAuthUserID(userID) {
+		return ReviewCommentStatusData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return ReviewCommentStatusData{}, err
+	}
+
+	if !isValidUUID(commentID) {
+		return ReviewCommentStatusData{}, sharederrors.Validation("invalid commentId", nil)
+	}
+
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != "published" && status != "hidden" {
+		return ReviewCommentStatusData{}, sharederrors.Validation("status must be one of: published, hidden", nil)
+	}
+
+	record, err := s.repo.UpdateReviewCommentStatus(ctx, commentID, status, time.Now().UTC())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ReviewCommentStatusData{}, sharederrors.NotFound("review comment not found", nil)
+		}
+
+		return ReviewCommentStatusData{}, sharederrors.Internal("failed to update review comment status", nil)
+	}
+
+	return mapReviewCommentStatusRecord(record), nil
 }
 
 func (s *Service) CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error) {
@@ -888,6 +919,15 @@ func mapReviewCommentRecord(record ReviewCommentRecord) ReviewCommentData {
 		Body:        record.Body,
 		CreatedAt:   record.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:   record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func mapReviewCommentStatusRecord(record ReviewCommentStatusRecord) ReviewCommentStatusData {
+	return ReviewCommentStatusData{
+		ID:        record.ID,
+		ReviewID:  record.ReviewID,
+		Status:    record.Status,
+		UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
