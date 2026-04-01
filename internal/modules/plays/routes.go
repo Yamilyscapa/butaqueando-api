@@ -43,13 +43,13 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	submissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	submissions.POST("/plays", handler.CreateSubmission)
 
-	myEngagements := v1.Group("/users/me")
+	myEngagements := v1.Group("/me")
 	myEngagements.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	myEngagements.GET("/bookmarks", handler.ListMyBookmarks)
 	myEngagements.GET("/watched", handler.ListMyWatched)
 	myEngagements.GET("/reviews", handler.ListMyReviews)
 
-	mySubmissions := v1.Group("/users/me/submissions")
+	mySubmissions := v1.Group("/me/submissions")
 	mySubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	mySubmissions.GET("/plays", handler.ListMySubmissions)
 	mySubmissions.PATCH("/plays/:playId", handler.UpdateMySubmission)

@@ -21,12 +21,12 @@ func TestRequireAccessTokenMissingHeader(t *testing.T) {
 	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
 		return middleware.AccessTokenClaims{}, authmodule.ErrInvalidToken
 	}))
-	router.GET("/v1/users/me/profile", func(c *gin.Context) {
+	router.GET("/v1/me/profile", func(c *gin.Context) {
 		httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
 	})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/profile", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {
@@ -71,7 +71,7 @@ func TestRequireAccessTokenValidBearerToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(parse))
-	router.GET("/v1/users/me/profile", func(c *gin.Context) {
+	router.GET("/v1/me/profile", func(c *gin.Context) {
 		userID, ok := middleware.GetAuthenticatedUserID(c)
 		if !ok {
 			httpx.WriteError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user in context", nil)
@@ -82,7 +82,7 @@ func TestRequireAccessTokenValidBearerToken(t *testing.T) {
 	})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/profile", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	router.ServeHTTP(recorder, request)
 

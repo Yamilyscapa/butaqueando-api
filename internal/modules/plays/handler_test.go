@@ -539,10 +539,10 @@ func TestHandlerListMyBookmarksRequiresAuth(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
 	handler := NewHandler(&fakeService{})
-	router.GET("/v1/users/me/bookmarks", handler.ListMyBookmarks)
+	router.GET("/v1/me/bookmarks", handler.ListMyBookmarks)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/bookmarks", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/bookmarks", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {
@@ -561,10 +561,10 @@ func TestHandlerListMyWatchedSuccess(t *testing.T) {
 	handler := NewHandler(&fakeService{listMyWatchFn: func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
 		return MyEngagementPlayListData{Items: []MyEngagementPlayData{{ID: "00000000-0000-0000-0000-000000000201", Title: "Hamlet", EngagedAt: "2026-01-01T00:00:00Z"}}}, nil
 	}})
-	router.GET("/v1/users/me/watched", handler.ListMyWatched)
+	router.GET("/v1/me/watched", handler.ListMyWatched)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/watched?limit=10", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/watched?limit=10", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	router.ServeHTTP(recorder, request)
 
@@ -580,10 +580,10 @@ func TestHandlerListMyReviewsRequiresAuth(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
 	handler := NewHandler(&fakeService{})
-	router.GET("/v1/users/me/reviews", handler.ListMyReviews)
+	router.GET("/v1/me/reviews", handler.ListMyReviews)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/reviews", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/reviews", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {

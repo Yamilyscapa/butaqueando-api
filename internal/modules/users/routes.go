@@ -22,7 +22,7 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	group.GET("", handler.List)
 	group.GET("/:userId/profile", handler.GetProfile)
 
-	me := group.Group("/me")
+	me := v1.Group("/me")
 	me.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	me.GET("/profile", handler.GetMe)
 	me.PATCH("/profile", handler.UpdateMe)

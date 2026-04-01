@@ -23,7 +23,10 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	protected.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	protected.POST("/:userId/follow", handler.Follow)
 	protected.DELETE("/:userId/follow", handler.Unfollow)
-	protected.GET("/me/followings", handler.MyFollowings)
+
+	me := v1.Group("/me")
+	me.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	me.GET("/followings", handler.MyFollowings)
 
 	users.GET("/:userId/followers", handler.UserFollowers)
 	users.GET("/:userId/followings", handler.UserFollowings)

@@ -540,7 +540,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/bookmarks:
+  /v1/me/bookmarks:
     get:
       tags: [plays]
       summary: List bookmarked plays for authenticated user
@@ -577,7 +577,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/watched:
+  /v1/me/watched:
     get:
       tags: [plays]
       summary: List watched plays for authenticated user
@@ -614,7 +614,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/submissions/plays:
+  /v1/me/submissions/plays:
     get:
       tags: [plays]
       summary: List my play submissions
@@ -657,7 +657,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/submissions/plays/{playId}:
+  /v1/me/submissions/plays/{playId}:
     patch:
       tags: [plays]
       summary: Edit and resubmit your play submission
@@ -1206,7 +1206,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/profile:
+  /v1/me/profile:
     get:
       tags: [users]
       summary: Get own profile
@@ -1286,7 +1286,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/reviews:
+  /v1/me/reviews:
     get:
       tags: [users]
       summary: List own published reviews
@@ -1488,7 +1488,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/users/me/followings:
+  /v1/me/followings:
     get:
       tags: [follows]
       summary: List followings for authenticated user

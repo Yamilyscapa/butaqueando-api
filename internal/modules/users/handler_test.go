@@ -52,10 +52,10 @@ func TestHandlerGetMeUnauthorizedWithoutToken(t *testing.T) {
 		return middleware.AccessTokenClaims{}, nil
 	}))
 	handler := NewHandler(&fakeService{})
-	router.GET("/v1/users/me/profile", handler.GetMe)
+	router.GET("/v1/me/profile", handler.GetMe)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/profile", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {
@@ -103,10 +103,10 @@ func TestHandlerGetMeSuccess(t *testing.T) {
 	handler := NewHandler(&fakeService{getMeProfileFn: func(ctx context.Context, userID string) (MeProfileData, error) {
 		return MeProfileData{ID: userID, DisplayName: "Ana", Email: "ana@example.com", Role: "user"}, nil
 	}})
-	router.GET("/v1/users/me/profile", handler.GetMe)
+	router.GET("/v1/me/profile", handler.GetMe)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/profile", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	request.Header.Set(httpx.RequestIDHeader, "users-get-me")
 	router.ServeHTTP(recorder, request)
@@ -136,11 +136,11 @@ func TestHandlerUpdateMeSuccess(t *testing.T) {
 	handler := NewHandler(&fakeService{updateMeProfileFn: func(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error) {
 		return MeProfileData{ID: userID, DisplayName: "Ana Updated", Email: "ana@example.com", Role: "user", Bio: req.Bio}, nil
 	}})
-	router.PATCH("/v1/users/me/profile", handler.UpdateMe)
+	router.PATCH("/v1/me/profile", handler.UpdateMe)
 
 	body := bytes.NewBufferString(`{"bio":"updated bio"}`)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/v1/users/me/profile", body)
+	request := httptest.NewRequest(http.MethodPatch, "/v1/me/profile", body)
 	request.Header.Set("Authorization", "Bearer token")
 	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)

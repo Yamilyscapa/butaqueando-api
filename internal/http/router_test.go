@@ -83,7 +83,7 @@ func TestRouterMeProfileRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/profile", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-me-auth-test")
 	router.ServeHTTP(recorder, request)
 
@@ -112,7 +112,7 @@ func TestRouterMyFollowingsRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/followings", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/followings", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-me-followings-auth-test")
 	router.ServeHTTP(recorder, request)
 
@@ -257,7 +257,7 @@ func TestRouterMySubmissionsRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/submissions/plays", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/submissions/plays", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-my-submissions-auth-test")
 	router.ServeHTTP(recorder, request)
 
@@ -286,7 +286,7 @@ func TestRouterMyBookmarksRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/bookmarks", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/bookmarks", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-my-bookmarks-auth-test")
 	router.ServeHTTP(recorder, request)
 
@@ -315,7 +315,7 @@ func TestRouterMyWatchedRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/watched", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/watched", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-my-watched-auth-test")
 	router.ServeHTTP(recorder, request)
 
@@ -344,7 +344,7 @@ func TestRouterMyReviewsRequiresAuthorization(t *testing.T) {
 	router := NewRouter(Dependencies{DB: nil})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/reviews", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/reviews", nil)
 	request.Header.Set(httpx.RequestIDHeader, "router-my-reviews-auth-test")
 	router.ServeHTTP(recorder, request)
 
