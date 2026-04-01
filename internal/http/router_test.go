@@ -278,3 +278,90 @@ func TestRouterMySubmissionsRequiresAuthorization(t *testing.T) {
 		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
 	}
 }
+
+func TestRouterMyBookmarksRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/bookmarks", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-my-bookmarks-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+
+	var body httpx.ResponseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Error == nil {
+		t.Fatalf("expected error payload")
+	}
+
+	if body.Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
+	}
+}
+
+func TestRouterMyWatchedRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/watched", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-my-watched-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+
+	var body httpx.ResponseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Error == nil {
+		t.Fatalf("expected error payload")
+	}
+
+	if body.Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
+	}
+}
+
+func TestRouterMyReviewsRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/reviews", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-my-reviews-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+
+	var body httpx.ResponseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Error == nil {
+		t.Fatalf("expected error payload")
+	}
+
+	if body.Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
+	}
+}

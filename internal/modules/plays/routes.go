@@ -25,6 +25,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 
 	group.GET("/:playId", handler.GetByID)
 	group.GET("/:playId/reviews", handler.ListReviews)
+	v1.GET("/users/:userId/watched", handler.ListUserWatched)
+	v1.GET("/users/:userId/reviews", handler.ListUserReviews)
 
 	protected := group.Group("")
 	protected.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
@@ -40,6 +42,12 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	submissions := v1.Group("/submissions")
 	submissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	submissions.POST("/plays", handler.CreateSubmission)
+
+	myEngagements := v1.Group("/users/me")
+	myEngagements.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	myEngagements.GET("/bookmarks", handler.ListMyBookmarks)
+	myEngagements.GET("/watched", handler.ListMyWatched)
+	myEngagements.GET("/reviews", handler.ListMyReviews)
 
 	mySubmissions := v1.Group("/users/me/submissions")
 	mySubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

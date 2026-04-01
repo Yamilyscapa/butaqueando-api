@@ -34,6 +34,12 @@ type ListReviewsParams struct {
 	Limit  int
 }
 
+type ListUserEngagementPlaysParams struct {
+	Kind  string
+	After *engagementPlayListCursor
+	Limit int
+}
+
 type Repository struct {
 	db *gorm.DB
 }
@@ -298,6 +304,28 @@ func (r *Repository) IsPlayPublished(ctx context.Context, playID string) (bool, 
 	return count > 0, nil
 }
 
+func (r *Repository) UserExists(ctx context.Context, userID string) (bool, error) {
+	if err := r.ensureDB(); err != nil {
+		return false, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return false, err
+	}
+
+	var count int64
+	err = r.db.WithContext(ctx).
+		Table("app.users").
+		Where("id = ?", userUUID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
 func (r *Repository) ListPublishedReviews(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err
@@ -324,18 +352,9 @@ func (r *Repository) ListPublishedReviews(ctx context.Context, params ListReview
 		Joins("JOIN app.users AS u ON u.id = r.user_id").
 		Where("r.play_id = ? AND r.status = ?", playUUID, "published")
 
-	if params.After != nil {
-		reviewUUID, err := parseUUID(params.After.ReviewID)
-		if err != nil {
-			return nil, err
-		}
-
-		query = query.Where(
-			"(r.created_at < ?) OR (r.created_at = ? AND r.id < ?)",
-			params.After.CreatedAt,
-			params.After.CreatedAt,
-			reviewUUID,
-		)
+	query, err = applyReviewListCursor(query, params.After, "r")
+	if err != nil {
+		return nil, err
 	}
 
 	var rows []reviewRow
@@ -360,6 +379,84 @@ func (r *Repository) ListPublishedReviews(ctx context.Context, params ListReview
 			ContainsSpoilers: row.ContainsSpoilers,
 			CreatedAt:        row.CreatedAt,
 			UpdatedAt:        row.UpdatedAt,
+		})
+	}
+
+	return records, nil
+}
+
+func (r *Repository) ListUserPublishedReviews(ctx context.Context, userID string, params ListUserReviewsParams) ([]UserReviewRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.reviews AS r").
+		Select(`
+			r.id,
+			r.play_id,
+			p.title AS play_title,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.published_at,
+			media.poster_url,
+			r.rating,
+			r.title,
+			r.body,
+			r.contains_spoilers,
+			r.created_at,
+			r.updated_at
+		`).
+		Joins("JOIN app.plays AS p ON p.id = r.play_id").
+		Joins(`
+			LEFT JOIN LATERAL (
+				SELECT pm.url AS poster_url
+				FROM app.play_media AS pm
+				WHERE pm.play_id = p.id
+				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
+				LIMIT 1
+			) AS media ON true
+		`).
+		Where("r.user_id = ? AND r.status = ? AND p.curation_status = ?", userUUID, "published", "published")
+
+	query, err = applyReviewListCursor(query, params.After, "r")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []userReviewRow
+	err = query.
+		Order("r.created_at DESC").
+		Order("r.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]UserReviewRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, UserReviewRecord{
+			ID:                 row.ID.String(),
+			PlayID:             row.PlayID.String(),
+			PlayTitle:          row.PlayTitle,
+			TheaterName:        row.TheaterName,
+			City:               row.City,
+			AvailabilityStatus: row.AvailabilityStatus,
+			PublishedAt:        row.PublishedAt,
+			PosterURL:          row.PosterURL,
+			Rating:             int(row.Rating),
+			Title:              row.Title,
+			Body:               row.Body,
+			ContainsSpoilers:   row.ContainsSpoilers,
+			CreatedAt:          row.CreatedAt,
+			UpdatedAt:          row.UpdatedAt,
 		})
 	}
 
@@ -639,6 +736,77 @@ func (r *Repository) GetEngagementState(ctx context.Context, userID string, play
 	}
 
 	return EngagementStateRecord{Wishlist: wishlistCount > 0, Attended: attendedCount > 0}, nil
+}
+
+func (r *Repository) ListUserEngagementPlays(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.user_play_engagements AS e").
+		Select(`
+			p.id,
+			p.title,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.published_at,
+			prs.avg_rating,
+			COALESCE(prs.review_count, 0) AS review_count,
+			media.poster_url,
+			e.created_at AS engaged_at
+		`).
+		Joins("JOIN app.plays AS p ON p.id = e.play_id").
+		Joins("LEFT JOIN app.play_rating_stats AS prs ON prs.play_id = p.id").
+		Joins(`
+			LEFT JOIN LATERAL (
+				SELECT pm.url AS poster_url
+				FROM app.play_media AS pm
+				WHERE pm.play_id = p.id
+				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
+				LIMIT 1
+			) AS media ON true
+		`).
+		Where("e.user_id = ? AND e.kind = ? AND p.curation_status = ?", userUUID, params.Kind, "published")
+
+	query, err = applyEngagementPlayListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []engagementPlayRow
+	err = query.
+		Order("e.created_at DESC").
+		Order("p.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]EngagementPlayRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, EngagementPlayRecord{
+			ID:                 row.ID.String(),
+			Title:              row.Title,
+			TheaterName:        row.TheaterName,
+			City:               row.City,
+			AvailabilityStatus: row.AvailabilityStatus,
+			PublishedAt:        row.PublishedAt,
+			PosterURL:          row.PosterURL,
+			AverageRating:      row.AverageRating,
+			ReviewCount:        row.ReviewCount,
+			EngagedAt:          row.EngagedAt,
+		})
+	}
+
+	return records, nil
 }
 
 func (r *Repository) CreateSubmission(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error) {
@@ -974,6 +1142,24 @@ func applyPlayListCursor(query *gorm.DB, after *playListCursor) (*gorm.DB, error
 	), nil
 }
 
+func applyReviewListCursor(query *gorm.DB, after *reviewListCursor, tableAlias string) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	reviewUUID, err := parseUUID(after.ReviewID)
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		fmt.Sprintf("(%s.created_at < ?) OR (%s.created_at = ? AND %s.id < ?)", tableAlias, tableAlias, tableAlias),
+		after.CreatedAt,
+		after.CreatedAt,
+		reviewUUID,
+	), nil
+}
+
 func mapPlayListRows(rows []playListRow) []PlayListRecord {
 	records := make([]PlayListRecord, 0, len(rows))
 	for _, row := range rows {
@@ -1007,6 +1193,24 @@ func applySubmissionListCursor(query *gorm.DB, after *submissionListCursor) (*go
 		"(p.created_at < ?) OR (p.created_at = ? AND p.id < ?)",
 		after.CreatedAt,
 		after.CreatedAt,
+		playUUID,
+	), nil
+}
+
+func applyEngagementPlayListCursor(query *gorm.DB, after *engagementPlayListCursor) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	playUUID, err := parseUUID(after.PlayID)
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		"(e.created_at < ?) OR (e.created_at = ? AND p.id < ?)",
+		after.EngagedAt,
+		after.EngagedAt,
 		playUUID,
 	), nil
 }
@@ -1151,6 +1355,19 @@ type playDetailsRow struct {
 	ReviewCount        int64     `gorm:"column:review_count"`
 }
 
+type engagementPlayRow struct {
+	ID                 uuid.UUID `gorm:"column:id"`
+	Title              string    `gorm:"column:title"`
+	TheaterName        string    `gorm:"column:theater_name"`
+	City               *string   `gorm:"column:city"`
+	AvailabilityStatus string    `gorm:"column:availability_status"`
+	PublishedAt        time.Time `gorm:"column:published_at"`
+	AverageRating      *float64  `gorm:"column:avg_rating"`
+	ReviewCount        int64     `gorm:"column:review_count"`
+	PosterURL          *string   `gorm:"column:poster_url"`
+	EngagedAt          time.Time `gorm:"column:engaged_at"`
+}
+
 type submissionRow struct {
 	ID                 uuid.UUID  `gorm:"column:id"`
 	Title              string     `gorm:"column:title"`
@@ -1198,6 +1415,23 @@ type reviewRow struct {
 	ContainsSpoilers bool      `gorm:"column:contains_spoilers"`
 	CreatedAt        time.Time `gorm:"column:created_at"`
 	UpdatedAt        time.Time `gorm:"column:updated_at"`
+}
+
+type userReviewRow struct {
+	ID                 uuid.UUID `gorm:"column:id"`
+	PlayID             uuid.UUID `gorm:"column:play_id"`
+	PlayTitle          string    `gorm:"column:play_title"`
+	TheaterName        string    `gorm:"column:theater_name"`
+	City               *string   `gorm:"column:city"`
+	AvailabilityStatus string    `gorm:"column:availability_status"`
+	PublishedAt        time.Time `gorm:"column:published_at"`
+	PosterURL          *string   `gorm:"column:poster_url"`
+	Rating             int16     `gorm:"column:rating"`
+	Title              *string   `gorm:"column:title"`
+	Body               string    `gorm:"column:body"`
+	ContainsSpoilers   bool      `gorm:"column:contains_spoilers"`
+	CreatedAt          time.Time `gorm:"column:created_at"`
+	UpdatedAt          time.Time `gorm:"column:updated_at"`
 }
 
 type reviewMetadataRow struct {

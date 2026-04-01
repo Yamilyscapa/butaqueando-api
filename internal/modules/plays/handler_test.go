@@ -21,7 +21,12 @@ type fakeService struct {
 	createReviewFn  func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
 	updateReviewFn  func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
 	createCommentFn func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	listUserWatchFn func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listUserRevFn   func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	createSubFn     func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
+	listMyBooksFn   func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyWatchFn   func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyRevFn     func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	listMySubsFn    func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	updateMySubFn   func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
 	listAdminSubsFn func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
@@ -87,12 +92,52 @@ func (f *fakeService) CreateReviewComment(ctx context.Context, userID string, re
 	return ReviewCommentData{}, nil
 }
 
+func (f *fakeService) ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	if f.listUserWatchFn != nil {
+		return f.listUserWatchFn(ctx, userID, query)
+	}
+
+	return MyEngagementPlayListData{}, nil
+}
+
+func (f *fakeService) ListUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+	if f.listUserRevFn != nil {
+		return f.listUserRevFn(ctx, userID, query)
+	}
+
+	return UserReviewListData{}, nil
+}
+
 func (f *fakeService) CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error) {
 	if f.createSubFn != nil {
 		return f.createSubFn(ctx, userID, req)
 	}
 
 	return SubmissionData{}, nil
+}
+
+func (f *fakeService) ListMyBookmarks(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	if f.listMyBooksFn != nil {
+		return f.listMyBooksFn(ctx, userID, query)
+	}
+
+	return MyEngagementPlayListData{}, nil
+}
+
+func (f *fakeService) ListMyWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	if f.listMyWatchFn != nil {
+		return f.listMyWatchFn(ctx, userID, query)
+	}
+
+	return MyEngagementPlayListData{}, nil
+}
+
+func (f *fakeService) ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+	if f.listMyRevFn != nil {
+		return f.listMyRevFn(ctx, userID, query)
+	}
+
+	return UserReviewListData{}, nil
 }
 
 func (f *fakeService) ListMySubmissions(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error) {
@@ -392,6 +437,105 @@ func TestHandlerCreateSubmissionSuccess(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerListUserWatchedSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{listUserWatchFn: func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+		return MyEngagementPlayListData{Items: []MyEngagementPlayData{{ID: "00000000-0000-0000-0000-000000000201", Title: "Hamlet", EngagedAt: "2026-01-01T00:00:00Z"}}}, nil
+	}})
+	router.GET("/v1/users/:userId/watched", handler.ListUserWatched)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/watched?limit=10", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerListUserReviewsSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{listUserRevFn: func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+		return UserReviewListData{Items: []UserReviewData{{ID: "00000000-0000-0000-0000-000000000501", Play: UserReviewPlayData{ID: "00000000-0000-0000-0000-000000000201", Title: "Hamlet", TheaterName: "T1", AvailabilityStatus: "in_theaters", PublishedAt: "2026-01-01T00:00:00Z"}, Rating: 5, Body: "great", CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}}}, nil
+	}})
+	router.GET("/v1/users/:userId/reviews", handler.ListUserReviews)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/reviews", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerListMyBookmarksRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.GET("/v1/users/me/bookmarks", handler.ListMyBookmarks)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/bookmarks", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerListMyWatchedSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{listMyWatchFn: func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+		return MyEngagementPlayListData{Items: []MyEngagementPlayData{{ID: "00000000-0000-0000-0000-000000000201", Title: "Hamlet", EngagedAt: "2026-01-01T00:00:00Z"}}}, nil
+	}})
+	router.GET("/v1/users/me/watched", handler.ListMyWatched)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/watched?limit=10", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerListMyReviewsRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.GET("/v1/users/me/reviews", handler.ListMyReviews)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me/reviews", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
 	}
 }
 

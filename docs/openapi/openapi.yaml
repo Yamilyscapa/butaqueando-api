@@ -540,6 +540,80 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/users/me/bookmarks:
+    get:
+      tags: [plays]
+      summary: List bookmarked plays for authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Bookmarked plays loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/watched:
+    get:
+      tags: [plays]
+      summary: List watched plays for authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Watched plays loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/users/me/submissions/plays:
     get:
       tags: [plays]
@@ -1009,6 +1083,88 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/users/{userId}/watched:
+    get:
+      tags: [users]
+      summary: List watched plays for a user profile
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Watched plays loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{userId}/reviews:
+    get:
+      tags: [users]
+      summary: List published reviews for a user profile
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: User reviews loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserReviewListSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/users/me/profile:
     get:
       tags: [users]
@@ -1080,6 +1236,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MeProfileSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/reviews:
+    get:
+      tags: [users]
+      summary: List own published reviews
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Own reviews loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserReviewListSuccessEnvelope'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1967,6 +2162,136 @@ components:
         attended:
           type: boolean
 
+    MyEngagementPlayData:
+      type: object
+      required:
+        - id
+        - title
+        - theaterName
+        - availabilityStatus
+        - publishedAt
+        - reviewCount
+        - engagedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        publishedAt:
+          type: string
+          format: date-time
+        posterUrl:
+          type: string
+          nullable: true
+        averageRating:
+          type: number
+          format: float
+          nullable: true
+        reviewCount:
+          type: integer
+          format: int64
+        engagedAt:
+          type: string
+          format: date-time
+
+    MyEngagementPlayListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyEngagementPlayData'
+        nextCursor:
+          type: string
+          nullable: true
+
+    UserReviewPlayData:
+      type: object
+      required:
+        - id
+        - title
+        - theaterName
+        - availabilityStatus
+        - publishedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        publishedAt:
+          type: string
+          format: date-time
+        posterUrl:
+          type: string
+          nullable: true
+
+    UserReviewData:
+      type: object
+      required:
+        - id
+        - play
+        - rating
+        - body
+        - containsSpoilers
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        play:
+          $ref: '#/components/schemas/UserReviewPlayData'
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        containsSpoilers:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserReviewListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserReviewData'
+        nextCursor:
+          type: string
+          nullable: true
+
     ProfileStatsData:
       type: object
       required:
@@ -2343,6 +2668,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/EngagementStateData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    MyEngagementPlayListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/MyEngagementPlayListData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    UserReviewListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/UserReviewListData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

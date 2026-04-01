@@ -18,7 +18,12 @@ type servicePort interface {
 	CreateReview(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
 	UpdateReview(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
 	CreateReviewComment(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	ListUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
+	ListMyBookmarks(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	ListMyWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	ListMySubmissions(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	UpdateMySubmission(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
 	ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
@@ -198,6 +203,38 @@ func (h *Handler) CreateReviewComment(c *gin.Context) {
 	httpx.WriteData(c, http.StatusCreated, data)
 }
 
+func (h *Handler) ListUserWatched(c *gin.Context) {
+	var query ListMyEngagementsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListUserWatched(c.Request.Context(), c.Param("userId"), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListUserReviews(c *gin.Context) {
+	var query ListUserReviewsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListUserReviews(c.Request.Context(), c.Param("userId"), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
 func (h *Handler) CreateSubmission(c *gin.Context) {
 	userID, ok := middleware.GetAuthenticatedUserID(c)
 	if !ok {
@@ -218,6 +255,72 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) ListMyBookmarks(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListMyEngagementsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyBookmarks(c.Request.Context(), userID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListMyWatched(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListMyEngagementsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyWatched(c.Request.Context(), userID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListMyReviews(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListUserReviewsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyReviews(c.Request.Context(), userID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMySubmissions(c *gin.Context) {

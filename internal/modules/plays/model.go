@@ -35,6 +35,16 @@ type ListSubmissionsQuery struct {
 	Limit  int    `form:"limit"`
 }
 
+type ListMyEngagementsQuery struct {
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
+type ListUserReviewsQuery struct {
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
 type CreateReviewRequest struct {
 	Rating           int     `json:"rating"`
 	Title            *string `json:"title"`
@@ -199,6 +209,50 @@ type EngagementStateData struct {
 	Attended bool   `json:"attended"`
 }
 
+type MyEngagementPlayData struct {
+	ID                 string   `json:"id"`
+	Title              string   `json:"title"`
+	TheaterName        string   `json:"theaterName"`
+	City               *string  `json:"city"`
+	AvailabilityStatus string   `json:"availabilityStatus"`
+	PublishedAt        string   `json:"publishedAt"`
+	PosterURL          *string  `json:"posterUrl"`
+	AverageRating      *float64 `json:"averageRating,omitempty"`
+	ReviewCount        int64    `json:"reviewCount"`
+	EngagedAt          string   `json:"engagedAt"`
+}
+
+type MyEngagementPlayListData struct {
+	Items      []MyEngagementPlayData `json:"items"`
+	NextCursor *string                `json:"nextCursor,omitempty"`
+}
+
+type UserReviewPlayData struct {
+	ID                 string  `json:"id"`
+	Title              string  `json:"title"`
+	TheaterName        string  `json:"theaterName"`
+	City               *string `json:"city"`
+	AvailabilityStatus string  `json:"availabilityStatus"`
+	PublishedAt        string  `json:"publishedAt"`
+	PosterURL          *string `json:"posterUrl"`
+}
+
+type UserReviewData struct {
+	ID               string             `json:"id"`
+	Play             UserReviewPlayData `json:"play"`
+	Rating           int                `json:"rating"`
+	Title            *string            `json:"title"`
+	Body             string             `json:"body"`
+	ContainsSpoilers bool               `json:"containsSpoilers"`
+	CreatedAt        string             `json:"createdAt"`
+	UpdatedAt        string             `json:"updatedAt"`
+}
+
+type UserReviewListData struct {
+	Items      []UserReviewData `json:"items"`
+	NextCursor *string          `json:"nextCursor,omitempty"`
+}
+
 type PlayListRecord struct {
 	ID                 string
 	Title              string
@@ -209,6 +263,19 @@ type PlayListRecord struct {
 	PosterURL          *string
 	AverageRating      *float64
 	ReviewCount        int64
+}
+
+type EngagementPlayRecord struct {
+	ID                 string
+	Title              string
+	TheaterName        string
+	City               *string
+	AvailabilityStatus string
+	PublishedAt        time.Time
+	PosterURL          *string
+	AverageRating      *float64
+	ReviewCount        int64
+	EngagedAt          time.Time
 }
 
 type PlayDetailsRecord struct {
@@ -253,6 +320,23 @@ type ReviewRecord struct {
 	ContainsSpoilers bool
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type UserReviewRecord struct {
+	ID                 string
+	PlayID             string
+	PlayTitle          string
+	TheaterName        string
+	City               *string
+	AvailabilityStatus string
+	PublishedAt        time.Time
+	PosterURL          *string
+	Rating             int
+	Title              *string
+	Body               string
+	ContainsSpoilers   bool
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type CreateReviewParams struct {
@@ -319,6 +403,11 @@ type ListSubmissionsParams struct {
 	Limit  int
 }
 
+type ListUserReviewsParams struct {
+	After *reviewListCursor
+	Limit int
+}
+
 type SubmissionRecord struct {
 	ID                 string
 	Title              string
@@ -365,6 +454,11 @@ type reviewListCursor struct {
 
 type submissionListCursor struct {
 	CreatedAt time.Time `json:"createdAt"`
+	PlayID    string    `json:"playId"`
+}
+
+type engagementPlayListCursor struct {
+	EngagedAt time.Time `json:"engagedAt"`
 	PlayID    string    `json:"playId"`
 }
 
@@ -455,6 +549,37 @@ func decodeSubmissionListCursor(raw string) (*submissionListCursor, error) {
 	}
 
 	if cursor.CreatedAt.IsZero() || cursor.PlayID == "" {
+		return nil, fmt.Errorf("invalid cursor payload")
+	}
+
+	return &cursor, nil
+}
+
+func encodeEngagementPlayListCursor(cursor engagementPlayListCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal cursor: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeEngagementPlayListCursor(raw string) (*engagementPlayListCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode cursor: %w", err)
+	}
+
+	var cursor engagementPlayListCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("unmarshal cursor: %w", err)
+	}
+
+	if cursor.EngagedAt.IsZero() || cursor.PlayID == "" {
 		return nil, fmt.Errorf("invalid cursor payload")
 	}
 

@@ -26,7 +26,9 @@ type repositoryPort interface {
 	ListPlayCast(ctx context.Context, playID string) ([]PlayCastRecord, error)
 	ListPlayMedia(ctx context.Context, playID string) ([]PlayMediaRecord, error)
 	IsPlayPublished(ctx context.Context, playID string) (bool, error)
+	UserExists(ctx context.Context, userID string) (bool, error)
 	ListPublishedReviews(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error)
+	ListUserPublishedReviews(ctx context.Context, userID string, params ListUserReviewsParams) ([]UserReviewRecord, error)
 	CreateReview(ctx context.Context, userID string, playID string, params CreateReviewParams) (ReviewRecord, error)
 	GetReviewMetadata(ctx context.Context, reviewID string) (ReviewMetadataRecord, error)
 	UpdateReview(ctx context.Context, reviewID string, params UpdateReviewParams) (ReviewRecord, error)
@@ -41,6 +43,7 @@ type repositoryPort interface {
 	SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error
 	DeleteEngagement(ctx context.Context, userID string, playID string, kind string) error
 	GetEngagementState(ctx context.Context, userID string, playID string) (EngagementStateRecord, error)
+	ListUserEngagementPlays(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error)
 }
 
 type Service struct {
@@ -487,6 +490,50 @@ func (s *Service) ListMySubmissions(ctx context.Context, userID string, query Li
 	return buildSubmissionListData(records, limit)
 }
 
+func (s *Service) ListMyBookmarks(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	return s.listMyEngagementPlays(ctx, userID, query, "wishlist", "failed to load bookmarks")
+}
+
+func (s *Service) ListMyWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	return s.listMyEngagementPlays(ctx, userID, query, "attended", "failed to load watched plays")
+}
+
+func (s *Service) ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	if !isValidUUID(userID) {
+		return MyEngagementPlayListData{}, sharederrors.Validation("invalid userId", nil)
+	}
+
+	if err := s.ensureUserExists(ctx, userID); err != nil {
+		return MyEngagementPlayListData{}, err
+	}
+
+	return s.listEngagementPlays(ctx, userID, query, "attended", "failed to load watched plays")
+}
+
+func (s *Service) ListUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+	if !isValidUUID(userID) {
+		return UserReviewListData{}, sharederrors.Validation("invalid userId", nil)
+	}
+
+	if err := s.ensureUserExists(ctx, userID); err != nil {
+		return UserReviewListData{}, err
+	}
+
+	return s.listUserReviews(ctx, userID, query)
+}
+
+func (s *Service) ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+	if !isValidAuthUserID(userID) {
+		return UserReviewListData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := s.ensureUserExists(ctx, userID); err != nil {
+		return UserReviewListData{}, err
+	}
+
+	return s.listUserReviews(ctx, userID, query)
+}
+
 func (s *Service) UpdateMySubmission(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error) {
 	if !isValidAuthUserID(userID) {
 		return SubmissionData{}, sharederrors.Unauthorized("invalid access token", nil)
@@ -890,6 +937,84 @@ func buildSubmissionListData(records []SubmissionRecord, limit int) (SubmissionL
 	return response, nil
 }
 
+func buildMyEngagementPlayListData(records []EngagementPlayRecord, limit int) (MyEngagementPlayListData, error) {
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]MyEngagementPlayData, 0, len(records))
+	for _, record := range records {
+		items = append(items, MyEngagementPlayData{
+			ID:                 record.ID,
+			Title:              record.Title,
+			TheaterName:        record.TheaterName,
+			City:               record.City,
+			AvailabilityStatus: record.AvailabilityStatus,
+			PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
+			PosterURL:          record.PosterURL,
+			AverageRating:      record.AverageRating,
+			ReviewCount:        record.ReviewCount,
+			EngagedAt:          record.EngagedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+
+	response := MyEngagementPlayListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeEngagementPlayListCursor(engagementPlayListCursor{EngagedAt: last.EngagedAt.UTC(), PlayID: last.ID})
+		if err != nil {
+			return MyEngagementPlayListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
+}
+
+func buildUserReviewListData(records []UserReviewRecord, limit int) (UserReviewListData, error) {
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]UserReviewData, 0, len(records))
+	for _, record := range records {
+		items = append(items, UserReviewData{
+			ID: record.ID,
+			Play: UserReviewPlayData{
+				ID:                 record.PlayID,
+				Title:              record.PlayTitle,
+				TheaterName:        record.TheaterName,
+				City:               record.City,
+				AvailabilityStatus: record.AvailabilityStatus,
+				PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
+				PosterURL:          record.PosterURL,
+			},
+			Rating:           record.Rating,
+			Title:            record.Title,
+			Body:             record.Body,
+			ContainsSpoilers: record.ContainsSpoilers,
+			CreatedAt:        record.CreatedAt.UTC().Format(time.RFC3339Nano),
+			UpdatedAt:        record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+
+	response := UserReviewListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeReviewListCursor(reviewListCursor{CreatedAt: last.CreatedAt.UTC(), ReviewID: last.ID})
+		if err != nil {
+			return UserReviewListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
+}
+
 func formatTimePointer(raw *time.Time) *string {
 	if raw == nil {
 		return nil
@@ -1038,6 +1163,66 @@ func (s *Service) loadEngagementState(ctx context.Context, userID string, playID
 	}
 
 	return EngagementStateData{PlayID: playID, Wishlist: state.Wishlist, Attended: state.Attended}, nil
+}
+
+func (s *Service) listMyEngagementPlays(ctx context.Context, userID string, query ListMyEngagementsQuery, kind string, loadErrorMessage string) (MyEngagementPlayListData, error) {
+	if !isValidAuthUserID(userID) {
+		return MyEngagementPlayListData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	return s.listEngagementPlays(ctx, userID, query, kind, loadErrorMessage)
+}
+
+func (s *Service) listEngagementPlays(ctx context.Context, userID string, query ListMyEngagementsQuery, kind string, loadErrorMessage string) (MyEngagementPlayListData, error) {
+
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return MyEngagementPlayListData{}, err
+	}
+
+	cursor, err := decodeEngagementPlayListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return MyEngagementPlayListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListUserEngagementPlays(ctx, userID, ListUserEngagementPlaysParams{Kind: kind, After: cursor, Limit: limit + 1})
+	if err != nil {
+		return MyEngagementPlayListData{}, sharederrors.Internal(loadErrorMessage, nil)
+	}
+
+	return buildMyEngagementPlayListData(records, limit)
+}
+
+func (s *Service) listUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return UserReviewListData{}, err
+	}
+
+	cursor, err := decodeReviewListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return UserReviewListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListUserPublishedReviews(ctx, userID, ListUserReviewsParams{After: cursor, Limit: limit + 1})
+	if err != nil {
+		return UserReviewListData{}, sharederrors.Internal("failed to load reviews", nil)
+	}
+
+	return buildUserReviewListData(records, limit)
+}
+
+func (s *Service) ensureUserExists(ctx context.Context, userID string) error {
+	exists, err := s.repo.UserExists(ctx, userID)
+	if err != nil {
+		return sharederrors.Internal("failed to load user", nil)
+	}
+
+	if !exists {
+		return sharederrors.NotFound("user not found", nil)
+	}
+
+	return nil
 }
 
 func normalizeListLimit(rawLimit int) (int, error) {

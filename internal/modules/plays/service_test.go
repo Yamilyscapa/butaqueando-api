@@ -18,7 +18,9 @@ type fakeRepository struct {
 	listPlayCastFn         func(ctx context.Context, playID string) ([]PlayCastRecord, error)
 	listPlayMediaFn        func(ctx context.Context, playID string) ([]PlayMediaRecord, error)
 	isPlayPublishedFn      func(ctx context.Context, playID string) (bool, error)
+	userExistsFn           func(ctx context.Context, userID string) (bool, error)
 	listReviewsFn          func(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error)
+	listUserReviewsFn      func(ctx context.Context, userID string, params ListUserReviewsParams) ([]UserReviewRecord, error)
 	createReviewFn         func(ctx context.Context, userID string, playID string, params CreateReviewParams) (ReviewRecord, error)
 	getReviewMetadataFn    func(ctx context.Context, reviewID string) (ReviewMetadataRecord, error)
 	updateReviewFn         func(ctx context.Context, reviewID string, params UpdateReviewParams) (ReviewRecord, error)
@@ -33,6 +35,7 @@ type fakeRepository struct {
 	setEngagementFn        func(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error
 	deleteEngagementFn     func(ctx context.Context, userID string, playID string, kind string) error
 	engagementStateFn      func(ctx context.Context, userID string, playID string) (EngagementStateRecord, error)
+	listMyEngagementsFn    func(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error)
 }
 
 func (f *fakeRepository) ListFeed(ctx context.Context, params FeedListParams) ([]PlayListRecord, error) {
@@ -91,9 +94,25 @@ func (f *fakeRepository) IsPlayPublished(ctx context.Context, playID string) (bo
 	return true, nil
 }
 
+func (f *fakeRepository) UserExists(ctx context.Context, userID string) (bool, error) {
+	if f.userExistsFn != nil {
+		return f.userExistsFn(ctx, userID)
+	}
+
+	return true, nil
+}
+
 func (f *fakeRepository) ListPublishedReviews(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error) {
 	if f.listReviewsFn != nil {
 		return f.listReviewsFn(ctx, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) ListUserPublishedReviews(ctx context.Context, userID string, params ListUserReviewsParams) ([]UserReviewRecord, error) {
+	if f.listUserReviewsFn != nil {
+		return f.listUserReviewsFn(ctx, userID, params)
 	}
 
 	return nil, nil
@@ -209,6 +228,14 @@ func (f *fakeRepository) GetEngagementState(ctx context.Context, userID string, 
 	}
 
 	return EngagementStateRecord{}, nil
+}
+
+func (f *fakeRepository) ListUserEngagementPlays(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error) {
+	if f.listMyEngagementsFn != nil {
+		return f.listMyEngagementsFn(ctx, userID, params)
+	}
+
+	return nil, nil
 }
 
 func TestServiceFeedRejectsInvalidSection(t *testing.T) {
@@ -494,6 +521,145 @@ func TestServiceDeleteEngagementIsIdempotent(t *testing.T) {
 
 	if data.Wishlist || data.Attended {
 		t.Fatalf("expected both engagement flags false")
+	}
+}
+
+func TestServiceListMyBookmarksBuildsNextCursor(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	service := NewService(&fakeRepository{listMyEngagementsFn: func(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error) {
+		if userID != "00000000-0000-0000-0000-000000000002" {
+			t.Fatalf("unexpected user id")
+		}
+
+		if params.Kind != "wishlist" {
+			t.Fatalf("expected wishlist kind")
+		}
+
+		if params.Limit != 2 {
+			t.Fatalf("expected limit 2, got %d", params.Limit)
+		}
+
+		return []EngagementPlayRecord{
+			{ID: "00000000-0000-0000-0000-000000000201", Title: "A", TheaterName: "T1", AvailabilityStatus: "in_theaters", PublishedAt: now, EngagedAt: now},
+			{ID: "00000000-0000-0000-0000-000000000202", Title: "B", TheaterName: "T2", AvailabilityStatus: "archive", PublishedAt: now.Add(-time.Minute), EngagedAt: now.Add(-time.Minute)},
+		}, nil
+	}})
+
+	data, err := service.ListMyBookmarks(context.Background(), "00000000-0000-0000-0000-000000000002", ListMyEngagementsQuery{Limit: 1})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(data.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(data.Items))
+	}
+
+	if data.Items[0].EngagedAt == "" {
+		t.Fatalf("expected engagedAt in payload")
+	}
+
+	if data.NextCursor == nil || *data.NextCursor == "" {
+		t.Fatalf("expected next cursor")
+	}
+}
+
+func TestServiceListMyWatchedRejectsInvalidCursor(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.ListMyWatched(context.Background(), "00000000-0000-0000-0000-000000000002", ListMyEngagementsQuery{Cursor: "%%%"})
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceListUserWatchedReturnsNotFoundWhenUserMissing(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{userExistsFn: func(ctx context.Context, userID string) (bool, error) {
+		return false, nil
+	}})
+
+	_, err := service.ListUserWatched(context.Background(), "00000000-0000-0000-0000-000000000099", ListMyEngagementsQuery{})
+	if err == nil {
+		t.Fatalf("expected not found error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND, got %q", appErr.Code)
+	}
+}
+
+func TestServiceListUserReviewsBuildsNextCursor(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	service := NewService(&fakeRepository{
+		userExistsFn: func(ctx context.Context, userID string) (bool, error) {
+			return true, nil
+		},
+		listUserReviewsFn: func(ctx context.Context, userID string, params ListUserReviewsParams) ([]UserReviewRecord, error) {
+			if params.Limit != 2 {
+				t.Fatalf("expected limit 2, got %d", params.Limit)
+			}
+
+			return []UserReviewRecord{
+				{ID: "00000000-0000-0000-0000-000000000501", PlayID: "00000000-0000-0000-0000-000000000201", PlayTitle: "A", TheaterName: "T1", AvailabilityStatus: "in_theaters", PublishedAt: now, Rating: 5, Body: "Great", CreatedAt: now, UpdatedAt: now},
+				{ID: "00000000-0000-0000-0000-000000000502", PlayID: "00000000-0000-0000-0000-000000000202", PlayTitle: "B", TheaterName: "T2", AvailabilityStatus: "archive", PublishedAt: now.Add(-time.Minute), Rating: 4, Body: "Good", CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute)},
+			}, nil
+		},
+	})
+
+	data, err := service.ListUserReviews(context.Background(), "00000000-0000-0000-0000-000000000002", ListUserReviewsQuery{Limit: 1})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(data.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(data.Items))
+	}
+
+	if data.Items[0].Play.ID == "" {
+		t.Fatalf("expected review play context")
+	}
+
+	if data.NextCursor == nil || *data.NextCursor == "" {
+		t.Fatalf("expected next cursor")
+	}
+}
+
+func TestServiceListMyReviewsRejectsInvalidUserID(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.ListMyReviews(context.Background(), "bad-user-id", ListUserReviewsQuery{})
+	if err == nil {
+		t.Fatalf("expected unauthorized error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected UNAUTHORIZED, got %q", appErr.Code)
 	}
 }
 
