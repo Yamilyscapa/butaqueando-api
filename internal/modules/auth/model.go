@@ -27,6 +27,15 @@ type ResendVerificationRequest struct {
 	Email string `json:"email" binding:"required,email"`
 }
 
+type ForgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type ResetPasswordRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"newPassword" binding:"required,min=8,max=72"`
+}
+
 type AuthUserData struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
@@ -52,6 +61,14 @@ type VerifyEmailData struct {
 }
 
 type ResendVerificationData struct {
+	OK bool `json:"ok"`
+}
+
+type ForgotPasswordData struct {
+	OK bool `json:"ok"`
+}
+
+type ResetPasswordData struct {
 	OK bool `json:"ok"`
 }
 

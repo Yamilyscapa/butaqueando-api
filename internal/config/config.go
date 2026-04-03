@@ -12,22 +12,25 @@ import (
 )
 
 type Config struct {
-	AppEnv                    string
-	Port                      string
-	DatabaseURL               string
-	DBMaxOpenConns            int
-	DBMaxIdleConns            int
-	DBConnMaxLifetime         time.Duration
-	JWTIssuer                 string
-	JWTAccessSecret           string
-	JWTRefreshSecret          string
-	JWTAccessTTL              time.Duration
-	JWTRefreshTTL             time.Duration
-	EmailVerificationRequired bool
-	ResendAPIKey              string
-	ResendFromEmail           string
-	ResendTemplateLoginCode   string
-	EmailVerificationRedirect string
+	AppEnv                      string
+	Port                        string
+	DatabaseURL                 string
+	DBMaxOpenConns              int
+	DBMaxIdleConns              int
+	DBConnMaxLifetime           time.Duration
+	JWTIssuer                   string
+	JWTAccessSecret             string
+	JWTRefreshSecret            string
+	JWTAccessTTL                time.Duration
+	JWTRefreshTTL               time.Duration
+	EmailVerificationRequired   bool
+	PasswordResetTokenTTL       time.Duration
+	ResendAPIKey                string
+	ResendFromEmail             string
+	ResendTemplateLoginCode     string
+	ResendTemplatePasswordReset string
+	EmailVerificationRedirect   string
+	PasswordResetRedirect       string
 }
 
 func Load() (Config, error) {
@@ -52,23 +55,31 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	passwordResetTokenTTL, err := durationFromEnvStrict("PASSWORD_RESET_TOKEN_TTL", time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
-		AppEnv:                    resolvedAppEnv,
-		Port:                      envOrDefault("PORT", "3000"),
-		DatabaseURL:               os.Getenv("DATABASE_URL"),
-		DBMaxOpenConns:            intFromEnv("DB_MAX_OPEN_CONNS", 20),
-		DBMaxIdleConns:            intFromEnv("DB_MAX_IDLE_CONNS", 5),
-		DBConnMaxLifetime:         durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
-		JWTIssuer:                 envOrDefault("JWT_ISSUER", "butaqueando-api"),
-		JWTAccessSecret:           os.Getenv("JWT_ACCESS_SECRET"),
-		JWTRefreshSecret:          os.Getenv("JWT_REFRESH_SECRET"),
-		JWTAccessTTL:              jwtAccessTTL,
-		JWTRefreshTTL:             jwtRefreshTTL,
-		EmailVerificationRequired: emailVerificationRequired,
-		ResendAPIKey:              strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		ResendFromEmail:           strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
-		ResendTemplateLoginCode:   envOrDefault("RESEND_TEMPLATE_LOGIN_CODE", "login-code"),
-		EmailVerificationRedirect: strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_REDIRECT_BASE")),
+		AppEnv:                      resolvedAppEnv,
+		Port:                        envOrDefault("PORT", "3000"),
+		DatabaseURL:                 os.Getenv("DATABASE_URL"),
+		DBMaxOpenConns:              intFromEnv("DB_MAX_OPEN_CONNS", 20),
+		DBMaxIdleConns:              intFromEnv("DB_MAX_IDLE_CONNS", 5),
+		DBConnMaxLifetime:           durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+		JWTIssuer:                   envOrDefault("JWT_ISSUER", "butaqueando-api"),
+		JWTAccessSecret:             os.Getenv("JWT_ACCESS_SECRET"),
+		JWTRefreshSecret:            os.Getenv("JWT_REFRESH_SECRET"),
+		JWTAccessTTL:                jwtAccessTTL,
+		JWTRefreshTTL:               jwtRefreshTTL,
+		EmailVerificationRequired:   emailVerificationRequired,
+		PasswordResetTokenTTL:       passwordResetTokenTTL,
+		ResendAPIKey:                strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		ResendFromEmail:             strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
+		ResendTemplateLoginCode:     envOrDefault("RESEND_TEMPLATE_LOGIN_CODE", "login-code"),
+		ResendTemplatePasswordReset: envOrDefault("RESEND_TEMPLATE_PASSWORD_RESET", "reset-password"),
+		EmailVerificationRedirect:   strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_REDIRECT_BASE")),
+		PasswordResetRedirect:       strings.TrimSpace(os.Getenv("PASSWORD_RESET_REDIRECT_BASE")),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -103,6 +114,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REDIRECT_BASE is required when EMAIL_VERIFICATION_REQUIRED is true")
 	}
 
+	if cfg.PasswordResetTokenTTL <= 0 {
+		return Config{}, fmt.Errorf("PASSWORD_RESET_TOKEN_TTL must be greater than 0")
+	}
+
 	if cfg.AppEnv == "production" && cfg.EmailVerificationRequired {
 		if cfg.ResendAPIKey == "" {
 			return Config{}, fmt.Errorf("RESEND_API_KEY is required when EMAIL_VERIFICATION_REQUIRED is true in production")
@@ -110,6 +125,10 @@ func Load() (Config, error) {
 
 		if cfg.ResendFromEmail == "" {
 			return Config{}, fmt.Errorf("RESEND_FROM_EMAIL is required when EMAIL_VERIFICATION_REQUIRED is true in production")
+		}
+
+		if cfg.PasswordResetRedirect == "" {
+			return Config{}, fmt.Errorf("PASSWORD_RESET_REDIRECT_BASE is required in production")
 		}
 	}
 

@@ -20,6 +20,8 @@ type fakeService struct {
 	signOutFn            func(ctx context.Context, req SignOutRequest) (SignOutData, error)
 	verifyEmailFn        func(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error)
 	resendVerificationFn func(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error)
+	forgotPasswordFn     func(ctx context.Context, req ForgotPasswordRequest) (ForgotPasswordData, error)
+	resetPasswordFn      func(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error)
 }
 
 func (f *fakeService) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, error) {
@@ -68,6 +70,22 @@ func (f *fakeService) ResendVerification(ctx context.Context, req ResendVerifica
 	}
 
 	return f.resendVerificationFn(ctx, req)
+}
+
+func (f *fakeService) ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (ForgotPasswordData, error) {
+	if f.forgotPasswordFn == nil {
+		return ForgotPasswordData{}, nil
+	}
+
+	return f.forgotPasswordFn(ctx, req)
+}
+
+func (f *fakeService) ResetPassword(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error) {
+	if f.resetPasswordFn == nil {
+		return ResetPasswordData{}, nil
+	}
+
+	return f.resetPasswordFn(ctx, req)
 }
 
 func TestHandlerSignUpSuccess(t *testing.T) {
@@ -213,6 +231,50 @@ func TestHandlerResendVerificationSuccess(t *testing.T) {
 	body := bytes.NewBufferString(`{"email":"ana@butaqueando.local"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/auth/resend-verification", body)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerForgotPasswordSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{forgotPasswordFn: func(ctx context.Context, req ForgotPasswordRequest) (ForgotPasswordData, error) {
+		return ForgotPasswordData{OK: true}, nil
+	}})
+	router.POST("/v1/auth/forgot-password", handler.ForgotPassword)
+
+	body := bytes.NewBufferString(`{"email":"ana@butaqueando.local"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", body)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerResetPasswordSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{resetPasswordFn: func(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error) {
+		return ResetPasswordData{OK: true}, nil
+	}})
+	router.POST("/v1/auth/reset-password", handler.ResetPassword)
+
+	body := bytes.NewBufferString(`{"token":"reset-token","newPassword":"password123"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", body)
 	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 

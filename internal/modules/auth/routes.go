@@ -18,6 +18,8 @@ type Dependencies struct {
 	ExposeVerificationToken   bool
 	VerificationEmailSender   sharedemail.Sender
 	EmailVerificationRedirect string
+	PasswordResetRedirect     string
+	PasswordResetTokenTTL     time.Duration
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
@@ -29,6 +31,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
 		VerificationEmailSender:   deps.VerificationEmailSender,
 		EmailVerificationRedirect: deps.EmailVerificationRedirect,
+		PasswordResetRedirect:     deps.PasswordResetRedirect,
+		PasswordResetTokenTTL:     deps.PasswordResetTokenTTL,
 	})
 	handler := NewHandler(service)
 	group := v1.Group(BasePath)
@@ -39,4 +43,6 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	group.POST("/sign-out", handler.SignOut)
 	group.POST("/verify-email", middleware.AuthRateLimit(30, time.Minute), handler.VerifyEmail)
 	group.POST("/resend-verification", middleware.AuthRateLimit(15, time.Minute), handler.ResendVerification)
+	group.POST("/forgot-password", middleware.AuthRateLimit(15, time.Minute), handler.ForgotPassword)
+	group.POST("/reset-password", middleware.AuthRateLimit(15, time.Minute), handler.ResetPassword)
 }

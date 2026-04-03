@@ -16,6 +16,8 @@ type servicePort interface {
 	SignOut(ctx context.Context, req SignOutRequest) (SignOutData, error)
 	VerifyEmail(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error)
 	ResendVerification(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error)
+	ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (ForgotPasswordData, error)
+	ResetPassword(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error)
 }
 
 type Handler struct {
@@ -114,6 +116,38 @@ func (h *Handler) ResendVerification(c *gin.Context) {
 	}
 
 	data, err := h.service.ResendVerification(c.Request.Context(), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ForgotPassword(c *gin.Context) {
+	var req ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ForgotPassword(c.Request.Context(), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ResetPassword(c.Request.Context(), req)
 	if err != nil {
 		_ = c.Error(err)
 		return

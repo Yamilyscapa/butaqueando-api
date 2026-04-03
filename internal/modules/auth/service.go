@@ -20,7 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultVerificationTokenTTL = 24 * time.Hour
+const (
+	defaultVerificationTokenTTL  = 24 * time.Hour
+	defaultPasswordResetTokenTTL = time.Hour
+)
 
 type repositoryPort interface {
 	FindUserByEmail(ctx context.Context, email string) (UserRecord, error)
@@ -33,10 +36,14 @@ type repositoryPort interface {
 	VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error
 	CreateEmailVerificationToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
 	InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error
+	CreatePasswordResetToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
+	InvalidatePasswordResetTokensForUser(ctx context.Context, userID string, now time.Time) error
+	ResetPasswordByTokenHash(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error
 }
 
-type verificationEmailSender interface {
+type emailSender interface {
 	SendVerificationEmail(ctx context.Context, input sharedemail.VerificationEmailInput) error
+	SendPasswordResetEmail(ctx context.Context, input sharedemail.PasswordResetEmailInput) error
 }
 
 type tokenManagerPort interface {
@@ -49,19 +56,23 @@ type ServiceOptions struct {
 	EmailVerificationRequired *bool
 	ExposeVerificationToken   bool
 	VerificationTokenTTL      time.Duration
-	VerificationEmailSender   verificationEmailSender
+	PasswordResetTokenTTL     time.Duration
+	VerificationEmailSender   emailSender
 	EmailVerificationRedirect string
+	PasswordResetRedirect     string
 }
 
 type Service struct {
 	repo                      repositoryPort
 	tokens                    tokenManagerPort
-	verificationEmailSender   verificationEmailSender
+	emailSender               emailSender
 	emailVerificationRedirect string
+	passwordResetRedirect     string
 	now                       func() time.Time
 	emailVerificationRequired bool
 	exposeVerificationToken   bool
 	verificationTokenTTL      time.Duration
+	passwordResetTokenTTL     time.Duration
 }
 
 func NewService(repo repositoryPort, tokens tokenManagerPort, options ServiceOptions) *Service {
@@ -75,15 +86,22 @@ func NewService(repo repositoryPort, tokens tokenManagerPort, options ServiceOpt
 		verificationTokenTTL = defaultVerificationTokenTTL
 	}
 
+	passwordResetTokenTTL := options.PasswordResetTokenTTL
+	if passwordResetTokenTTL <= 0 {
+		passwordResetTokenTTL = defaultPasswordResetTokenTTL
+	}
+
 	return &Service{
 		repo:                      repo,
 		tokens:                    tokens,
-		verificationEmailSender:   options.VerificationEmailSender,
+		emailSender:               options.VerificationEmailSender,
 		emailVerificationRedirect: strings.TrimSpace(options.EmailVerificationRedirect),
+		passwordResetRedirect:     strings.TrimSpace(options.PasswordResetRedirect),
 		now:                       func() time.Time { return time.Now().UTC() },
 		emailVerificationRequired: emailVerificationRequired,
 		exposeVerificationToken:   options.ExposeVerificationToken,
 		verificationTokenTTL:      verificationTokenTTL,
+		passwordResetTokenTTL:     passwordResetTokenTTL,
 	}
 }
 
@@ -323,6 +341,76 @@ func (s *Service) ResendVerification(ctx context.Context, req ResendVerification
 	return ResendVerificationData{OK: true}, nil
 }
 
+func (s *Service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (ForgotPasswordData, error) {
+	email := normalizeEmail(req.Email)
+	if email == "" {
+		return ForgotPasswordData{}, sharederrors.Validation("email is required", nil)
+	}
+
+	user, err := s.repo.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ForgotPasswordData{OK: true}, nil
+		}
+
+		return ForgotPasswordData{}, sharederrors.Internal("failed to request password reset", nil)
+	}
+
+	resetToken, err := generateVerificationToken()
+	if err != nil {
+		return ForgotPasswordData{}, sharederrors.Internal("failed to request password reset", nil)
+	}
+
+	now := s.now()
+	if err := s.repo.InvalidatePasswordResetTokensForUser(ctx, user.ID, now); err != nil {
+		return ForgotPasswordData{}, sharederrors.Internal("failed to request password reset", nil)
+	}
+
+	resetTokenHash := hashVerificationToken(resetToken)
+	if err := s.repo.CreatePasswordResetToken(ctx, user.ID, resetTokenHash, now.Add(s.passwordResetTokenTTL), now); err != nil {
+		return ForgotPasswordData{}, sharederrors.Internal("failed to request password reset", nil)
+	}
+
+	if err := s.sendPasswordResetEmail(ctx, user.ID, user.Email, resetToken, resetTokenHash); err != nil {
+		return ForgotPasswordData{}, err
+	}
+
+	return ForgotPasswordData{OK: true}, nil
+}
+
+func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error) {
+	rawToken := strings.TrimSpace(req.Token)
+	if rawToken == "" {
+		return ResetPasswordData{}, sharederrors.Validation("token is required", nil)
+	}
+
+	newPassword := strings.TrimSpace(req.NewPassword)
+	if newPassword == "" {
+		return ResetPasswordData{}, sharederrors.Validation("newPassword is required", nil)
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return ResetPasswordData{}, sharederrors.Internal("failed to reset password", nil)
+	}
+
+	err = s.repo.ResetPasswordByTokenHash(ctx, hashVerificationToken(rawToken), string(passwordHash), s.now())
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPasswordResetTokenExpired):
+			return ResetPasswordData{}, sharederrors.New(http.StatusBadRequest, "PASSWORD_RESET_TOKEN_EXPIRED", "password reset token has expired", nil)
+		case errors.Is(err, ErrPasswordResetTokenConsumed):
+			return ResetPasswordData{}, sharederrors.New(http.StatusBadRequest, "PASSWORD_RESET_TOKEN_ALREADY_USED", "password reset token was already used", nil)
+		case errors.Is(err, ErrPasswordResetTokenInvalid):
+			return ResetPasswordData{}, sharederrors.New(http.StatusBadRequest, "PASSWORD_RESET_TOKEN_INVALID", "invalid password reset token", nil)
+		default:
+			return ResetPasswordData{}, sharederrors.Internal("failed to reset password", nil)
+		}
+	}
+
+	return ResetPasswordData{OK: true}, nil
+}
+
 func buildTokensData(user UserRecord, accessToken string, accessExpiresAt time.Time, refreshToken string, refreshExpiresAt time.Time) AuthTokensData {
 	now := time.Now().UTC()
 	return AuthTokensData{
@@ -350,7 +438,7 @@ func durationSeconds(now time.Time, expiresAt time.Time) int64 {
 }
 
 func (s *Service) sendVerificationEmail(ctx context.Context, userID string, userEmail string, verificationToken string, verificationTokenHash string) error {
-	if s.verificationEmailSender == nil {
+	if s.emailSender == nil {
 		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
 	}
 
@@ -359,12 +447,33 @@ func (s *Service) sendVerificationEmail(ctx context.Context, userID string, user
 		return sharederrors.Internal("failed to send verification email", nil)
 	}
 
-	if err := s.verificationEmailSender.SendVerificationEmail(ctx, sharedemail.VerificationEmailInput{
+	if err := s.emailSender.SendVerificationEmail(ctx, sharedemail.VerificationEmailInput{
 		ToEmail:        userEmail,
 		Redirect:       redirect,
 		IdempotencyKey: buildVerificationIdempotencyKey(userID, verificationTokenHash),
 	}); err != nil {
 		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
+	}
+
+	return nil
+}
+
+func (s *Service) sendPasswordResetEmail(ctx context.Context, userID string, userEmail string, resetToken string, resetTokenHash string) error {
+	if s.emailSender == nil {
+		return sharederrors.ServiceUnavailable("failed to send password reset email", nil)
+	}
+
+	redirect, err := buildVerificationRedirectURL(s.passwordResetRedirect, resetToken)
+	if err != nil {
+		return sharederrors.Internal("failed to send password reset email", nil)
+	}
+
+	if err := s.emailSender.SendPasswordResetEmail(ctx, sharedemail.PasswordResetEmailInput{
+		ToEmail:        userEmail,
+		Redirect:       redirect,
+		IdempotencyKey: buildPasswordResetIdempotencyKey(userID, resetTokenHash),
+	}); err != nil {
+		return sharederrors.ServiceUnavailable("failed to send password reset email", nil)
 	}
 
 	return nil
@@ -396,6 +505,15 @@ func buildVerificationIdempotencyKey(userID string, tokenHash string) string {
 	}
 
 	return fmt.Sprintf("email-verification/%s/%s", strings.TrimSpace(userID), hashPrefix)
+}
+
+func buildPasswordResetIdempotencyKey(userID string, tokenHash string) string {
+	hashPrefix := tokenHash
+	if len(hashPrefix) > 16 {
+		hashPrefix = hashPrefix[:16]
+	}
+
+	return fmt.Sprintf("password-reset/%s/%s", strings.TrimSpace(userID), hashPrefix)
 }
 
 func normalizeEmail(raw string) string {

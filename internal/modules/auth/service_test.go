@@ -15,18 +15,21 @@ import (
 )
 
 type fakeRepository struct {
-	findUserByEmailFn      func(ctx context.Context, email string) (UserRecord, error)
-	findUserByIDFn         func(ctx context.Context, userID string) (UserRecord, error)
-	insertRefreshTokenFn   func(ctx context.Context, tokenID string, userID string, expiresAt time.Time, createdAt time.Time) error
-	findActiveRefreshFn    func(ctx context.Context, tokenID string, userID string, now time.Time) (RefreshTokenRecord, error)
-	rotateRefreshTokenFn   func(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
-	revokeRefreshTokenFn   func(ctx context.Context, tokenID string, userID string, now time.Time) error
-	createPendingUserFn    func(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
-	verifyEmailByTokenHash func(ctx context.Context, tokenHash string, now time.Time) error
-	createVerificationFn   func(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
-	invalidateTokensFn     func(ctx context.Context, userID string, now time.Time) error
-	revokedTokenIDCaptured string
-	revokedUserIDCaptured  string
+	findUserByEmailFn              func(ctx context.Context, email string) (UserRecord, error)
+	findUserByIDFn                 func(ctx context.Context, userID string) (UserRecord, error)
+	insertRefreshTokenFn           func(ctx context.Context, tokenID string, userID string, expiresAt time.Time, createdAt time.Time) error
+	findActiveRefreshFn            func(ctx context.Context, tokenID string, userID string, now time.Time) (RefreshTokenRecord, error)
+	rotateRefreshTokenFn           func(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
+	revokeRefreshTokenFn           func(ctx context.Context, tokenID string, userID string, now time.Time) error
+	createPendingUserFn            func(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
+	verifyEmailByTokenHash         func(ctx context.Context, tokenHash string, now time.Time) error
+	createVerificationFn           func(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
+	invalidateVerificationTokensFn func(ctx context.Context, userID string, now time.Time) error
+	createPasswordResetFn          func(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
+	invalidatePasswordResetFn      func(ctx context.Context, userID string, now time.Time) error
+	resetPasswordByTokenHashFn     func(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error
+	revokedTokenIDCaptured         string
+	revokedUserIDCaptured          string
 }
 
 func (f *fakeRepository) FindUserByEmail(ctx context.Context, email string) (UserRecord, error) {
@@ -84,8 +87,32 @@ func (f *fakeRepository) CreateEmailVerificationToken(ctx context.Context, userI
 }
 
 func (f *fakeRepository) InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error {
-	if f.invalidateTokensFn != nil {
-		return f.invalidateTokensFn(ctx, userID, now)
+	if f.invalidateVerificationTokensFn != nil {
+		return f.invalidateVerificationTokensFn(ctx, userID, now)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) CreatePasswordResetToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error {
+	if f.createPasswordResetFn != nil {
+		return f.createPasswordResetFn(ctx, userID, tokenHash, expiresAt, createdAt)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) InvalidatePasswordResetTokensForUser(ctx context.Context, userID string, now time.Time) error {
+	if f.invalidatePasswordResetFn != nil {
+		return f.invalidatePasswordResetFn(ctx, userID, now)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) ResetPasswordByTokenHash(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error {
+	if f.resetPasswordByTokenHashFn != nil {
+		return f.resetPasswordByTokenHashFn(ctx, tokenHash, passwordHash, now)
 	}
 
 	return nil
@@ -98,12 +125,21 @@ type fakeTokenManager struct {
 }
 
 type fakeVerificationEmailSender struct {
-	sendFn func(ctx context.Context, input sharedemail.VerificationEmailInput) error
+	sendVerificationFn func(ctx context.Context, input sharedemail.VerificationEmailInput) error
+	sendResetFn        func(ctx context.Context, input sharedemail.PasswordResetEmailInput) error
 }
 
 func (f *fakeVerificationEmailSender) SendVerificationEmail(ctx context.Context, input sharedemail.VerificationEmailInput) error {
-	if f.sendFn != nil {
-		return f.sendFn(ctx, input)
+	if f.sendVerificationFn != nil {
+		return f.sendVerificationFn(ctx, input)
+	}
+
+	return nil
+}
+
+func (f *fakeVerificationEmailSender) SendPasswordResetEmail(ctx context.Context, input sharedemail.PasswordResetEmailInput) error {
+	if f.sendResetFn != nil {
+		return f.sendResetFn(ctx, input)
 	}
 
 	return nil
@@ -344,7 +380,7 @@ func TestServiceSignUpSendsVerificationEmailWhenRequired(t *testing.T) {
 
 	sent := false
 	sender := &fakeVerificationEmailSender{
-		sendFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
+		sendVerificationFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
 			sent = true
 			if input.ToEmail != "user@butaqueando.local" {
 				t.Fatalf("expected recipient email %q, got %q", "user@butaqueando.local", input.ToEmail)
@@ -435,7 +471,7 @@ func TestServiceResendVerificationSendsForUnverifiedUser(t *testing.T) {
 
 	sent := false
 	sender := &fakeVerificationEmailSender{
-		sendFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
+		sendVerificationFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
 			sent = true
 			return nil
 		},
@@ -457,5 +493,110 @@ func TestServiceResendVerificationSendsForUnverifiedUser(t *testing.T) {
 
 	if !sent {
 		t.Fatalf("expected verification email to be sent")
+	}
+}
+
+func TestServiceForgotPasswordReturnsOKForUnknownUser(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		findUserByEmailFn: func(ctx context.Context, email string) (UserRecord, error) {
+			return UserRecord{}, gorm.ErrRecordNotFound
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
+	result, err := service.ForgotPassword(context.Background(), ForgotPasswordRequest{Email: "missing@butaqueando.local"})
+	if err != nil {
+		t.Fatalf("expected forgot password success, got error: %v", err)
+	}
+
+	if !result.OK {
+		t.Fatalf("expected forgot password ok true")
+	}
+}
+
+func TestServiceForgotPasswordSendsResetEmail(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		findUserByEmailFn: func(ctx context.Context, email string) (UserRecord, error) {
+			return UserRecord{ID: "user-1", Email: email, DisplayName: "User", Role: "user"}, nil
+		},
+	}
+
+	sent := false
+	sender := &fakeVerificationEmailSender{
+		sendResetFn: func(ctx context.Context, input sharedemail.PasswordResetEmailInput) error {
+			sent = true
+			if !strings.HasPrefix(input.Redirect, "https://app.butaqueando.com/reset-password?token=") {
+				t.Fatalf("expected reset redirect to include token query, got %q", input.Redirect)
+			}
+
+			if input.IdempotencyKey == "" {
+				t.Fatalf("expected idempotency key to be set")
+			}
+
+			return nil
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{
+		VerificationEmailSender: sender,
+		PasswordResetRedirect:   "https://app.butaqueando.com/reset-password",
+	})
+
+	result, err := service.ForgotPassword(context.Background(), ForgotPasswordRequest{Email: "user@butaqueando.local"})
+	if err != nil {
+		t.Fatalf("expected forgot password success, got error: %v", err)
+	}
+
+	if !result.OK {
+		t.Fatalf("expected forgot password ok true")
+	}
+
+	if !sent {
+		t.Fatalf("expected password reset email to be sent")
+	}
+}
+
+func TestServiceResetPasswordReturnsValidationForExpiredToken(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		resetPasswordByTokenHashFn: func(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error {
+			return ErrPasswordResetTokenExpired
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
+	_, err := service.ResetPassword(context.Background(), ResetPasswordRequest{Token: "token", NewPassword: "password123"})
+	if err == nil {
+		t.Fatalf("expected reset password error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "PASSWORD_RESET_TOKEN_EXPIRED" {
+		t.Fatalf("expected code %q, got %q", "PASSWORD_RESET_TOKEN_EXPIRED", appErr.Code)
+	}
+}
+
+func TestServiceResetPasswordSuccess(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{}
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
+
+	result, err := service.ResetPassword(context.Background(), ResetPasswordRequest{Token: "token", NewPassword: "password123"})
+	if err != nil {
+		t.Fatalf("expected reset password success, got error: %v", err)
+	}
+
+	if !result.OK {
+		t.Fatalf("expected reset password ok true")
 	}
 }

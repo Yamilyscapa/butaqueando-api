@@ -1164,6 +1164,88 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request password reset instructions
+      description: Returns a generic success response to prevent account enumeration.
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            examples:
+              default:
+                value:
+                  email: ana@example.com
+      responses:
+        '200':
+          description: Password reset request accepted
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      ok: true
+                    error: null
+                    requestId: req-7174f5883d404d7b8ce4df8ac2fca5bf
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Reset password with token
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            examples:
+              default:
+                value:
+                  token: m_5KAjfM4lA6cQdA2adQEcZDYMT1cA1q8Sz7sA4laLk
+                  newPassword: new-password-123
+      responses:
+        '200':
+          description: Password reset successfully
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      ok: true
+                    error: null
+                    requestId: req-6234ec3f2c7e4d9e8a22e8f23c90de8d
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/users/{userId}/profile:
     get:
       tags: [users]
@@ -2631,6 +2713,28 @@ components:
           type: string
           format: email
 
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - newPassword
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 72
+
     AuthUserData:
       type: object
       required:
@@ -2713,6 +2817,22 @@ components:
           type: boolean
 
     ResendVerificationData:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    ForgotPasswordData:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    ResetPasswordData:
       type: object
       required:
         - ok
@@ -2967,6 +3087,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ResendVerificationData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ForgotPasswordSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ForgotPasswordData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ResetPasswordSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ResetPasswordData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

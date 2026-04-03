@@ -2,6 +2,7 @@ package apihttp
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/butaqueando/api/internal/http/middleware"
 	"github.com/butaqueando/api/internal/modules/auth"
@@ -22,6 +23,8 @@ type Dependencies struct {
 	ExposeVerificationToken   bool
 	VerificationEmailSender   sharedemail.Sender
 	EmailVerificationRedirect string
+	PasswordResetRedirect     string
+	PasswordResetTokenTTL     time.Duration
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -69,6 +72,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
 		VerificationEmailSender:   deps.VerificationEmailSender,
 		EmailVerificationRedirect: deps.EmailVerificationRedirect,
+		PasswordResetRedirect:     deps.PasswordResetRedirect,
+		PasswordResetTokenTTL:     deps.PasswordResetTokenTTL,
 	})
 	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})

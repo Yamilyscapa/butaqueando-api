@@ -23,7 +23,12 @@ func Bootstrap() (*Application, error) {
 
 	verificationEmailSender := sharedemail.Sender(sharedemail.NoopSender{})
 	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
-		resendSender, senderErr := sharedemail.NewResendSender(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendTemplateLoginCode)
+		resendSender, senderErr := sharedemail.NewResendSender(
+			cfg.ResendAPIKey,
+			cfg.ResendFromEmail,
+			cfg.ResendTemplateLoginCode,
+			cfg.ResendTemplatePasswordReset,
+		)
 		if senderErr != nil {
 			return nil, fmt.Errorf("build resend sender: %w", senderErr)
 		}
@@ -44,6 +49,8 @@ func Bootstrap() (*Application, error) {
 		ExposeVerificationToken:   cfg.AppEnv != "production",
 		VerificationEmailSender:   verificationEmailSender,
 		EmailVerificationRedirect: cfg.EmailVerificationRedirect,
+		PasswordResetRedirect:     cfg.PasswordResetRedirect,
+		PasswordResetTokenTTL:     cfg.PasswordResetTokenTTL,
 	})
 
 	return &Application{

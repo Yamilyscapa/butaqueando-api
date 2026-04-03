@@ -44,6 +44,9 @@ var (
 	ErrEmailVerificationTokenInvalid  = errors.New("email verification token invalid")
 	ErrEmailVerificationTokenExpired  = errors.New("email verification token expired")
 	ErrEmailVerificationTokenConsumed = errors.New("email verification token consumed")
+	ErrPasswordResetTokenInvalid      = errors.New("password reset token invalid")
+	ErrPasswordResetTokenExpired      = errors.New("password reset token expired")
+	ErrPasswordResetTokenConsumed     = errors.New("password reset token consumed")
 )
 
 func NewRepository(db *gorm.DB) *Repository {
@@ -329,6 +332,89 @@ func (r *Repository) InvalidateEmailVerificationTokensForUser(ctx context.Contex
 		Updates(map[string]any{"consumed_at": now}).Error
 }
 
+func (r *Repository) CreatePasswordResetToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	entity := passwordResetTokenEntity{
+		UserID:    userUUID,
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+		CreatedAt: createdAt,
+	}
+
+	return r.db.WithContext(ctx).Create(&entity).Error
+}
+
+func (r *Repository) InvalidatePasswordResetTokensForUser(ctx context.Context, userID string, now time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).
+		Model(&passwordResetTokenEntity{}).
+		Where("user_id = ? AND consumed_at IS NULL", userUUID).
+		Updates(map[string]any{"consumed_at": now}).Error
+}
+
+func (r *Repository) ResetPasswordByTokenHash(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var token passwordResetTokenEntity
+		err := tx.Where("token_hash = ?", tokenHash).Take(&token).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrPasswordResetTokenInvalid
+			}
+
+			return err
+		}
+
+		if token.ConsumedAt != nil {
+			return ErrPasswordResetTokenConsumed
+		}
+
+		if !token.ExpiresAt.After(now) {
+			return ErrPasswordResetTokenExpired
+		}
+
+		consumeResult := tx.Model(&passwordResetTokenEntity{}).
+			Where("id = ? AND consumed_at IS NULL", token.ID).
+			Updates(map[string]any{"consumed_at": now})
+		if consumeResult.Error != nil {
+			return consumeResult.Error
+		}
+
+		if consumeResult.RowsAffected == 0 {
+			return ErrPasswordResetTokenConsumed
+		}
+
+		if err := tx.Model(&userEntity{}).
+			Where("id = ?", token.UserID).
+			Updates(map[string]any{"password_hash": passwordHash, "updated_at": now}).Error; err != nil {
+			return err
+		}
+
+		return tx.Model(&userRefreshTokenEntity{}).
+			Where("user_id = ? AND revoked_at IS NULL", token.UserID).
+			Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error
+	})
+}
+
 func (r *Repository) ensureDB() error {
 	if r == nil || r.db == nil {
 		return gorm.ErrInvalidDB
@@ -388,6 +474,19 @@ type emailVerificationTokenEntity struct {
 
 func (emailVerificationTokenEntity) TableName() string {
 	return "app.email_verification_tokens"
+}
+
+type passwordResetTokenEntity struct {
+	ID         uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	UserID     uuid.UUID  `gorm:"column:user_id;type:uuid"`
+	TokenHash  string     `gorm:"column:token_hash"`
+	ExpiresAt  time.Time  `gorm:"column:expires_at"`
+	ConsumedAt *time.Time `gorm:"column:consumed_at"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+}
+
+func (passwordResetTokenEntity) TableName() string {
+	return "app.password_reset_tokens"
 }
 
 func mapUserEntityToRecord(entity userEntity) UserRecord {
