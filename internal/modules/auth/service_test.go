@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -20,6 +22,9 @@ type fakeRepository struct {
 	rotateRefreshTokenFn   func(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
 	revokeRefreshTokenFn   func(ctx context.Context, tokenID string, userID string, now time.Time) error
 	createPendingUserFn    func(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
+	verifyEmailByTokenHash func(ctx context.Context, tokenHash string, now time.Time) error
+	createVerificationFn   func(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
+	invalidateTokensFn     func(ctx context.Context, userID string, now time.Time) error
 	revokedTokenIDCaptured string
 	revokedUserIDCaptured  string
 }
@@ -62,10 +67,46 @@ func (f *fakeRepository) CreatePendingUser(ctx context.Context, input CreatePend
 	return UserRecord{}, errors.New("not implemented")
 }
 
+func (f *fakeRepository) VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error {
+	if f.verifyEmailByTokenHash != nil {
+		return f.verifyEmailByTokenHash(ctx, tokenHash, now)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) CreateEmailVerificationToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error {
+	if f.createVerificationFn != nil {
+		return f.createVerificationFn(ctx, userID, tokenHash, expiresAt, createdAt)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error {
+	if f.invalidateTokensFn != nil {
+		return f.invalidateTokensFn(ctx, userID, now)
+	}
+
+	return nil
+}
+
 type fakeTokenManager struct {
 	parseRefreshTokenFn    func(rawToken string) (RefreshClaims, error)
 	generateAccessTokenFn  func(userID string, role string) (string, time.Time, error)
 	generateRefreshTokenFn func(userID string, role string) (string, string, time.Time, error)
+}
+
+type fakeVerificationEmailSender struct {
+	sendFn func(ctx context.Context, input sharedemail.VerificationEmailInput) error
+}
+
+func (f *fakeVerificationEmailSender) SendVerificationEmail(ctx context.Context, input sharedemail.VerificationEmailInput) error {
+	if f.sendFn != nil {
+		return f.sendFn(ctx, input)
+	}
+
+	return nil
 }
 
 func (f *fakeTokenManager) GenerateAccessToken(userID string, role string) (string, time.Time, error) {
@@ -266,8 +307,15 @@ func TestServiceSignUpExposesVerificationTokenInDev(t *testing.T) {
 		},
 	}
 
+	sender := &fakeVerificationEmailSender{}
+
 	emailVerificationRequired := true
-	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{ExposeVerificationToken: true, EmailVerificationRequired: &emailVerificationRequired})
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{
+		ExposeVerificationToken:   true,
+		EmailVerificationRequired: &emailVerificationRequired,
+		VerificationEmailSender:   sender,
+		EmailVerificationRedirect: "https://app.butaqueando.com/verify-email",
+	})
 	result, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Email: "user@butaqueando.local", Password: "password123"})
 	if err != nil {
 		t.Fatalf("expected sign up success, got error: %v", err)
@@ -279,5 +327,135 @@ func TestServiceSignUpExposesVerificationTokenInDev(t *testing.T) {
 
 	if !result.EmailVerificationRequired {
 		t.Fatalf("expected email verification required true")
+	}
+}
+
+func TestServiceSignUpSendsVerificationEmailWhenRequired(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		findUserByEmailFn: func(ctx context.Context, email string) (UserRecord, error) {
+			return UserRecord{}, gorm.ErrRecordNotFound
+		},
+		createPendingUserFn: func(ctx context.Context, input CreatePendingUserInput) (UserRecord, error) {
+			return UserRecord{ID: "user-1", Email: input.Email, DisplayName: input.DisplayName, Role: input.Role}, nil
+		},
+	}
+
+	sent := false
+	sender := &fakeVerificationEmailSender{
+		sendFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
+			sent = true
+			if input.ToEmail != "user@butaqueando.local" {
+				t.Fatalf("expected recipient email %q, got %q", "user@butaqueando.local", input.ToEmail)
+			}
+
+			if !strings.HasPrefix(input.Redirect, "https://app.butaqueando.com/verify-email?token=") {
+				t.Fatalf("expected redirect to include verification token query, got %q", input.Redirect)
+			}
+
+			if input.IdempotencyKey == "" {
+				t.Fatalf("expected idempotency key to be set")
+			}
+
+			return nil
+		},
+	}
+
+	emailVerificationRequired := true
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{
+		EmailVerificationRequired: &emailVerificationRequired,
+		VerificationEmailSender:   sender,
+		EmailVerificationRedirect: "https://app.butaqueando.com/verify-email",
+	})
+
+	_, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Email: "user@butaqueando.local", Password: "password123"})
+	if err != nil {
+		t.Fatalf("expected sign up success, got error: %v", err)
+	}
+
+	if !sent {
+		t.Fatalf("expected verification email to be sent")
+	}
+}
+
+func TestServiceVerifyEmailReturnsValidationForExpiredToken(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		verifyEmailByTokenHash: func(ctx context.Context, tokenHash string, now time.Time) error {
+			return ErrEmailVerificationTokenExpired
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
+	_, err := service.VerifyEmail(context.Background(), VerifyEmailRequest{Token: "token"})
+	if err == nil {
+		t.Fatalf("expected verify email error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "EMAIL_VERIFICATION_TOKEN_EXPIRED" {
+		t.Fatalf("expected code %q, got %q", "EMAIL_VERIFICATION_TOKEN_EXPIRED", appErr.Code)
+	}
+}
+
+func TestServiceResendVerificationReturnsOKForUnknownUser(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		findUserByEmailFn: func(ctx context.Context, email string) (UserRecord, error) {
+			return UserRecord{}, gorm.ErrRecordNotFound
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
+	result, err := service.ResendVerification(context.Background(), ResendVerificationRequest{Email: "missing@butaqueando.local"})
+	if err != nil {
+		t.Fatalf("expected resend verification success, got error: %v", err)
+	}
+
+	if !result.OK {
+		t.Fatalf("expected resend verification ok true")
+	}
+}
+
+func TestServiceResendVerificationSendsForUnverifiedUser(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{
+		findUserByEmailFn: func(ctx context.Context, email string) (UserRecord, error) {
+			return UserRecord{ID: "user-1", Email: email, DisplayName: "User", Role: "user"}, nil
+		},
+	}
+
+	sent := false
+	sender := &fakeVerificationEmailSender{
+		sendFn: func(ctx context.Context, input sharedemail.VerificationEmailInput) error {
+			sent = true
+			return nil
+		},
+	}
+
+	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{
+		VerificationEmailSender:   sender,
+		EmailVerificationRedirect: "https://app.butaqueando.com/verify-email",
+	})
+
+	result, err := service.ResendVerification(context.Background(), ResendVerificationRequest{Email: "user@butaqueando.local"})
+	if err != nil {
+		t.Fatalf("expected resend verification success, got error: %v", err)
+	}
+
+	if !result.OK {
+		t.Fatalf("expected resend verification ok true")
+	}
+
+	if !sent {
+		t.Fatalf("expected verification email to be sent")
 	}
 }

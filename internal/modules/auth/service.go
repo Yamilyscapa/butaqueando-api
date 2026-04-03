@@ -7,10 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
@@ -27,6 +30,13 @@ type repositoryPort interface {
 	RotateRefreshToken(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenID string, userID string, now time.Time) error
 	CreatePendingUser(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
+	VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error
+	CreateEmailVerificationToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
+	InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error
+}
+
+type verificationEmailSender interface {
+	SendVerificationEmail(ctx context.Context, input sharedemail.VerificationEmailInput) error
 }
 
 type tokenManagerPort interface {
@@ -39,11 +49,15 @@ type ServiceOptions struct {
 	EmailVerificationRequired *bool
 	ExposeVerificationToken   bool
 	VerificationTokenTTL      time.Duration
+	VerificationEmailSender   verificationEmailSender
+	EmailVerificationRedirect string
 }
 
 type Service struct {
 	repo                      repositoryPort
 	tokens                    tokenManagerPort
+	verificationEmailSender   verificationEmailSender
+	emailVerificationRedirect string
 	now                       func() time.Time
 	emailVerificationRequired bool
 	exposeVerificationToken   bool
@@ -64,6 +78,8 @@ func NewService(repo repositoryPort, tokens tokenManagerPort, options ServiceOpt
 	return &Service{
 		repo:                      repo,
 		tokens:                    tokens,
+		verificationEmailSender:   options.VerificationEmailSender,
+		emailVerificationRedirect: strings.TrimSpace(options.EmailVerificationRedirect),
 		now:                       func() time.Time { return time.Now().UTC() },
 		emailVerificationRequired: emailVerificationRequired,
 		exposeVerificationToken:   options.ExposeVerificationToken,
@@ -95,6 +111,7 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 	if err != nil {
 		return SignUpData{}, sharederrors.Internal("failed to sign up", nil)
 	}
+	verificationTokenHash := hashVerificationToken(verificationToken)
 
 	now := s.now()
 	createdUser, err := s.repo.CreatePendingUser(ctx, CreatePendingUserInput{
@@ -102,7 +119,7 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 		Email:                      email,
 		PasswordHash:               string(passwordHash),
 		Role:                       "user",
-		EmailVerificationTokenHash: hashVerificationToken(verificationToken),
+		EmailVerificationTokenHash: verificationTokenHash,
 		EmailVerificationExpiresAt: now.Add(s.verificationTokenTTL),
 		CreatedAt:                  now,
 	})
@@ -122,6 +139,12 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 
 	if s.exposeVerificationToken {
 		response.VerificationToken = &verificationToken
+	}
+
+	if s.emailVerificationRequired {
+		if err := s.sendVerificationEmail(ctx, createdUser.ID, createdUser.Email, verificationToken, verificationTokenHash); err != nil {
+			return SignUpData{}, err
+		}
 	}
 
 	return response, nil
@@ -236,6 +259,70 @@ func (s *Service) SignOut(ctx context.Context, req SignOutRequest) (SignOutData,
 	return SignOutData{OK: true}, nil
 }
 
+func (s *Service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error) {
+	rawToken := strings.TrimSpace(req.Token)
+	if rawToken == "" {
+		return VerifyEmailData{}, sharederrors.Validation("token is required", nil)
+	}
+
+	err := s.repo.VerifyEmailByTokenHash(ctx, hashVerificationToken(rawToken), s.now())
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrEmailVerificationTokenExpired):
+			return VerifyEmailData{}, sharederrors.New(http.StatusBadRequest, "EMAIL_VERIFICATION_TOKEN_EXPIRED", "email verification token has expired", nil)
+		case errors.Is(err, ErrEmailVerificationTokenConsumed):
+			return VerifyEmailData{}, sharederrors.New(http.StatusBadRequest, "EMAIL_VERIFICATION_TOKEN_ALREADY_USED", "email verification token was already used", nil)
+		case errors.Is(err, ErrEmailVerificationTokenInvalid):
+			return VerifyEmailData{}, sharederrors.New(http.StatusBadRequest, "EMAIL_VERIFICATION_TOKEN_INVALID", "invalid email verification token", nil)
+		default:
+			return VerifyEmailData{}, sharederrors.Internal("failed to verify email", nil)
+		}
+	}
+
+	return VerifyEmailData{OK: true}, nil
+}
+
+func (s *Service) ResendVerification(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error) {
+	email := normalizeEmail(req.Email)
+	if email == "" {
+		return ResendVerificationData{}, sharederrors.Validation("email is required", nil)
+	}
+
+	user, err := s.repo.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ResendVerificationData{OK: true}, nil
+		}
+
+		return ResendVerificationData{}, sharederrors.Internal("failed to resend verification email", nil)
+	}
+
+	if user.EmailVerifiedAt != nil {
+		return ResendVerificationData{OK: true}, nil
+	}
+
+	verificationToken, err := generateVerificationToken()
+	if err != nil {
+		return ResendVerificationData{}, sharederrors.Internal("failed to resend verification email", nil)
+	}
+
+	now := s.now()
+	if err := s.repo.InvalidateEmailVerificationTokensForUser(ctx, user.ID, now); err != nil {
+		return ResendVerificationData{}, sharederrors.Internal("failed to resend verification email", nil)
+	}
+
+	verificationTokenHash := hashVerificationToken(verificationToken)
+	if err := s.repo.CreateEmailVerificationToken(ctx, user.ID, verificationTokenHash, now.Add(s.verificationTokenTTL), now); err != nil {
+		return ResendVerificationData{}, sharederrors.Internal("failed to resend verification email", nil)
+	}
+
+	if err := s.sendVerificationEmail(ctx, user.ID, user.Email, verificationToken, verificationTokenHash); err != nil {
+		return ResendVerificationData{}, err
+	}
+
+	return ResendVerificationData{OK: true}, nil
+}
+
 func buildTokensData(user UserRecord, accessToken string, accessExpiresAt time.Time, refreshToken string, refreshExpiresAt time.Time) AuthTokensData {
 	now := time.Now().UTC()
 	return AuthTokensData{
@@ -260,6 +347,55 @@ func durationSeconds(now time.Time, expiresAt time.Time) int64 {
 	}
 
 	return seconds
+}
+
+func (s *Service) sendVerificationEmail(ctx context.Context, userID string, userEmail string, verificationToken string, verificationTokenHash string) error {
+	if s.verificationEmailSender == nil {
+		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
+	}
+
+	redirect, err := buildVerificationRedirectURL(s.emailVerificationRedirect, verificationToken)
+	if err != nil {
+		return sharederrors.Internal("failed to send verification email", nil)
+	}
+
+	if err := s.verificationEmailSender.SendVerificationEmail(ctx, sharedemail.VerificationEmailInput{
+		ToEmail:        userEmail,
+		Redirect:       redirect,
+		IdempotencyKey: buildVerificationIdempotencyKey(userID, verificationTokenHash),
+	}); err != nil {
+		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
+	}
+
+	return nil
+}
+
+func buildVerificationRedirectURL(base string, token string) (string, error) {
+	trimmedBase := strings.TrimSpace(base)
+	trimmedToken := strings.TrimSpace(token)
+	if trimmedBase == "" || trimmedToken == "" {
+		return "", fmt.Errorf("verification redirect base and token are required")
+	}
+
+	parsed, err := url.Parse(trimmedBase)
+	if err != nil {
+		return "", err
+	}
+
+	query := parsed.Query()
+	query.Set("token", trimmedToken)
+	parsed.RawQuery = query.Encode()
+
+	return parsed.String(), nil
+}
+
+func buildVerificationIdempotencyKey(userID string, tokenHash string) string {
+	hashPrefix := tokenHash
+	if len(hashPrefix) > 16 {
+		hashPrefix = hashPrefix[:16]
+	}
+
+	return fmt.Sprintf("email-verification/%s/%s", strings.TrimSpace(userID), hashPrefix)
 }
 
 func normalizeEmail(raw string) string {

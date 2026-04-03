@@ -1083,6 +1083,87 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/auth/verify-email:
+    post:
+      tags: [auth]
+      summary: Verify a pending account email with token
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+            examples:
+              default:
+                value:
+                  token: m_5KAjfM4lA6cQdA2adQEcZDYMT1cA1q8Sz7sA4laLk
+      responses:
+        '200':
+          description: Email verified successfully
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyEmailSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      ok: true
+                    error: null
+                    requestId: req-5cb3f0d4d2cb427f90f9fdd6cbd7fca8
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/resend-verification:
+    post:
+      tags: [auth]
+      summary: Resend email verification instructions
+      description: Returns a generic success response to prevent account enumeration.
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+            examples:
+              default:
+                value:
+                  email: ana@example.com
+      responses:
+        '200':
+          description: Verification resend flow accepted
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResendVerificationSuccessEnvelope'
+              examples:
+                success:
+                  value:
+                    data:
+                      ok: true
+                    error: null
+                    requestId: req-a65a4afb8dfd4d5eb2ecbf4c5d3dd940
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/users/{userId}/profile:
     get:
       tags: [users]
@@ -2533,6 +2614,23 @@ components:
         refreshToken:
           type: string
 
+    VerifyEmailRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+
     AuthUserData:
       type: object
       required:
@@ -2599,6 +2697,22 @@ components:
           description: Returned only outside production.
 
     SignOutData:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    VerifyEmailData:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    ResendVerificationData:
       type: object
       required:
         - ok
@@ -2825,6 +2939,34 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/SignOutData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    VerifyEmailSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/VerifyEmailData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    ResendVerificationSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/ResendVerificationData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:

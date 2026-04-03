@@ -19,6 +19,14 @@ type SignOutRequest struct {
 	RefreshToken string `json:"refreshToken" binding:"required"`
 }
 
+type VerifyEmailRequest struct {
+	Token string `json:"token" binding:"required"`
+}
+
+type ResendVerificationRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
 type AuthUserData struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
@@ -36,6 +44,14 @@ type AuthTokensData struct {
 }
 
 type SignOutData struct {
+	OK bool `json:"ok"`
+}
+
+type VerifyEmailData struct {
+	OK bool `json:"ok"`
+}
+
+type ResendVerificationData struct {
 	OK bool `json:"ok"`
 }
 

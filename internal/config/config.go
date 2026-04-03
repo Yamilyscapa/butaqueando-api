@@ -24,6 +24,10 @@ type Config struct {
 	JWTAccessTTL              time.Duration
 	JWTRefreshTTL             time.Duration
 	EmailVerificationRequired bool
+	ResendAPIKey              string
+	ResendFromEmail           string
+	ResendTemplateLoginCode   string
+	EmailVerificationRedirect string
 }
 
 func Load() (Config, error) {
@@ -61,6 +65,10 @@ func Load() (Config, error) {
 		JWTAccessTTL:              jwtAccessTTL,
 		JWTRefreshTTL:             jwtRefreshTTL,
 		EmailVerificationRequired: emailVerificationRequired,
+		ResendAPIKey:              strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		ResendFromEmail:           strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
+		ResendTemplateLoginCode:   envOrDefault("RESEND_TEMPLATE_LOGIN_CODE", "login-code"),
+		EmailVerificationRedirect: strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_REDIRECT_BASE")),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -89,6 +97,20 @@ func Load() (Config, error) {
 
 	if cfg.AppEnv == "production" && !cfg.EmailVerificationRequired {
 		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REQUIRED must be true in production")
+	}
+
+	if cfg.EmailVerificationRequired && cfg.EmailVerificationRedirect == "" {
+		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REDIRECT_BASE is required when EMAIL_VERIFICATION_REQUIRED is true")
+	}
+
+	if cfg.AppEnv == "production" && cfg.EmailVerificationRequired {
+		if cfg.ResendAPIKey == "" {
+			return Config{}, fmt.Errorf("RESEND_API_KEY is required when EMAIL_VERIFICATION_REQUIRED is true in production")
+		}
+
+		if cfg.ResendFromEmail == "" {
+			return Config{}, fmt.Errorf("RESEND_FROM_EMAIL is required when EMAIL_VERIFICATION_REQUIRED is true in production")
+		}
 	}
 
 	return cfg, nil

@@ -14,10 +14,12 @@ import (
 )
 
 type fakeService struct {
-	signUpFn  func(ctx context.Context, req SignUpRequest) (SignUpData, error)
-	signInFn  func(ctx context.Context, req SignInRequest) (AuthTokensData, error)
-	refreshFn func(ctx context.Context, req RefreshRequest) (AuthTokensData, error)
-	signOutFn func(ctx context.Context, req SignOutRequest) (SignOutData, error)
+	signUpFn             func(ctx context.Context, req SignUpRequest) (SignUpData, error)
+	signInFn             func(ctx context.Context, req SignInRequest) (AuthTokensData, error)
+	refreshFn            func(ctx context.Context, req RefreshRequest) (AuthTokensData, error)
+	signOutFn            func(ctx context.Context, req SignOutRequest) (SignOutData, error)
+	verifyEmailFn        func(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error)
+	resendVerificationFn func(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error)
 }
 
 func (f *fakeService) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, error) {
@@ -50,6 +52,22 @@ func (f *fakeService) SignOut(ctx context.Context, req SignOutRequest) (SignOutD
 	}
 
 	return f.signOutFn(ctx, req)
+}
+
+func (f *fakeService) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error) {
+	if f.verifyEmailFn == nil {
+		return VerifyEmailData{}, nil
+	}
+
+	return f.verifyEmailFn(ctx, req)
+}
+
+func (f *fakeService) ResendVerification(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error) {
+	if f.resendVerificationFn == nil {
+		return ResendVerificationData{}, nil
+	}
+
+	return f.resendVerificationFn(ctx, req)
 }
 
 func TestHandlerSignUpSuccess(t *testing.T) {
@@ -156,5 +174,49 @@ func TestHandlerSignInValidationError(t *testing.T) {
 
 	if response.Error.Code != "VALIDATION_ERROR" {
 		t.Fatalf("expected error code %q, got %q", "VALIDATION_ERROR", response.Error.Code)
+	}
+}
+
+func TestHandlerVerifyEmailSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{verifyEmailFn: func(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error) {
+		return VerifyEmailData{OK: true}, nil
+	}})
+	router.POST("/v1/auth/verify-email", handler.VerifyEmail)
+
+	body := bytes.NewBufferString(`{"token":"verification-token"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email", body)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerResendVerificationSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{resendVerificationFn: func(ctx context.Context, req ResendVerificationRequest) (ResendVerificationData, error) {
+		return ResendVerificationData{OK: true}, nil
+	}})
+	router.POST("/v1/auth/resend-verification", handler.ResendVerification)
+
+	body := bytes.NewBufferString(`{"email":"ana@butaqueando.local"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/resend-verification", body)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }

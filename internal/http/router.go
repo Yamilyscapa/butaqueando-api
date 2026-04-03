@@ -9,6 +9,7 @@ import (
 	"github.com/butaqueando/api/internal/modules/health"
 	"github.com/butaqueando/api/internal/modules/plays"
 	"github.com/butaqueando/api/internal/modules/users"
+	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/httpx"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +20,8 @@ type Dependencies struct {
 	TokenConfig               auth.TokenConfig
 	EmailVerificationRequired bool
 	ExposeVerificationToken   bool
+	VerificationEmailSender   sharedemail.Sender
+	EmailVerificationRedirect string
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -64,6 +67,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		TokenConfig:               deps.TokenConfig,
 		EmailVerificationRequired: deps.EmailVerificationRequired,
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
+		VerificationEmailSender:   deps.VerificationEmailSender,
+		EmailVerificationRedirect: deps.EmailVerificationRedirect,
 	})
 	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})

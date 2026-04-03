@@ -7,6 +7,7 @@ import (
 	"github.com/butaqueando/api/internal/database"
 	apihttp "github.com/butaqueando/api/internal/http"
 	authmodule "github.com/butaqueando/api/internal/modules/auth"
+	sharedemail "github.com/butaqueando/api/internal/shared/email"
 )
 
 func Bootstrap() (*Application, error) {
@@ -20,6 +21,16 @@ func Bootstrap() (*Application, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	verificationEmailSender := sharedemail.Sender(sharedemail.NoopSender{})
+	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
+		resendSender, senderErr := sharedemail.NewResendSender(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendTemplateLoginCode)
+		if senderErr != nil {
+			return nil, fmt.Errorf("build resend sender: %w", senderErr)
+		}
+
+		verificationEmailSender = resendSender
+	}
+
 	router := apihttp.NewRouter(apihttp.Dependencies{
 		DB: db,
 		TokenConfig: authmodule.TokenConfig{
@@ -31,6 +42,8 @@ func Bootstrap() (*Application, error) {
 		},
 		EmailVerificationRequired: cfg.EmailVerificationRequired,
 		ExposeVerificationToken:   cfg.AppEnv != "production",
+		VerificationEmailSender:   verificationEmailSender,
+		EmailVerificationRedirect: cfg.EmailVerificationRedirect,
 	})
 
 	return &Application{

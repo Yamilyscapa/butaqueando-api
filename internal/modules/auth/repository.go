@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +39,12 @@ type CreatePendingUserInput struct {
 type Repository struct {
 	db *gorm.DB
 }
+
+var (
+	ErrEmailVerificationTokenInvalid  = errors.New("email verification token invalid")
+	ErrEmailVerificationTokenExpired  = errors.New("email verification token expired")
+	ErrEmailVerificationTokenConsumed = errors.New("email verification token consumed")
+)
 
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
@@ -243,6 +250,83 @@ func (r *Repository) CreatePendingUser(ctx context.Context, input CreatePendingU
 	}
 
 	return mapUserEntityToRecord(createdUser), nil
+}
+
+func (r *Repository) VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var token emailVerificationTokenEntity
+		err := tx.Where("token_hash = ?", tokenHash).Take(&token).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrEmailVerificationTokenInvalid
+			}
+
+			return err
+		}
+
+		if token.ConsumedAt != nil {
+			return ErrEmailVerificationTokenConsumed
+		}
+
+		if !token.ExpiresAt.After(now) {
+			return ErrEmailVerificationTokenExpired
+		}
+
+		consumeResult := tx.Model(&emailVerificationTokenEntity{}).
+			Where("id = ? AND consumed_at IS NULL", token.ID).
+			Updates(map[string]any{"consumed_at": now})
+		if consumeResult.Error != nil {
+			return consumeResult.Error
+		}
+
+		if consumeResult.RowsAffected == 0 {
+			return ErrEmailVerificationTokenConsumed
+		}
+
+		return tx.Model(&userEntity{}).
+			Where("id = ?", token.UserID).
+			Updates(map[string]any{"email_verified_at": now, "updated_at": now}).Error
+	})
+}
+
+func (r *Repository) CreateEmailVerificationToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	entity := emailVerificationTokenEntity{
+		UserID:    userUUID,
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+		CreatedAt: createdAt,
+	}
+
+	return r.db.WithContext(ctx).Create(&entity).Error
+}
+
+func (r *Repository) InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).
+		Model(&emailVerificationTokenEntity{}).
+		Where("user_id = ? AND consumed_at IS NULL", userUUID).
+		Updates(map[string]any{"consumed_at": now}).Error
 }
 
 func (r *Repository) ensureDB() error {
