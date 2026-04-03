@@ -36,7 +36,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) GetMe(c *gin.Context) {
@@ -52,7 +52,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) UpdateMe(c *gin.Context) {

@@ -158,3 +158,37 @@ func TestHandlerUpdateMeSuccess(t *testing.T) {
 		t.Fatalf("expected no error payload")
 	}
 }
+
+func TestHandlerGetProfileReturnsNotModifiedWhenETagMatches(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{getPublicProfileFn: func(ctx context.Context, userID string) (PublicProfileData, error) {
+		return PublicProfileData{ID: userID, DisplayName: "Public User"}, nil
+	}})
+	router.GET("/v1/users/:userId/profile", handler.GetProfile)
+
+	firstRecorder := httptest.NewRecorder()
+	firstRequest := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/profile", nil)
+	router.ServeHTTP(firstRecorder, firstRequest)
+
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, firstRecorder.Code)
+	}
+
+	etag := firstRecorder.Header().Get(httpx.ETagHeader)
+	if etag == "" {
+		t.Fatalf("expected etag header")
+	}
+
+	secondRecorder := httptest.NewRecorder()
+	secondRequest := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/profile", nil)
+	secondRequest.Header.Set(httpx.IfNoneMatchHeader, etag)
+	router.ServeHTTP(secondRecorder, secondRequest)
+
+	if secondRecorder.Code != http.StatusNotModified {
+		t.Fatalf("expected status %d, got %d", http.StatusNotModified, secondRecorder.Code)
+	}
+}

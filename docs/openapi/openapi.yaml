@@ -113,6 +113,7 @@ paths:
         - `genre` (requires `genreId`)
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: section
           in: query
           required: true
@@ -145,10 +146,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '500':
@@ -160,6 +165,7 @@ paths:
       summary: Search published plays
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: q
           in: query
           required: false
@@ -205,10 +211,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '500':
@@ -220,6 +230,7 @@ paths:
       summary: Get published play details
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: playId
           in: path
           required: true
@@ -232,10 +243,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayDetailsSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -249,6 +264,7 @@ paths:
       summary: List published reviews for a play
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: playId
           in: path
           required: true
@@ -273,10 +289,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReviewListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -550,6 +570,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: cursor
           in: query
           required: false
@@ -568,10 +589,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -587,6 +612,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: cursor
           in: query
           required: false
@@ -605,10 +631,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -624,6 +654,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: status
           in: query
           required: false
@@ -648,10 +679,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -710,6 +745,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: status
           in: query
           required: false
@@ -734,10 +770,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1252,6 +1292,7 @@ paths:
       summary: Get public user profile
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: userId
           in: path
           required: true
@@ -1264,6 +1305,8 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1282,6 +1325,8 @@ paths:
                         reviewsCount: 3
                     error: null
                     requestId: req-e58154ed393d4c1f9e6fb488e6c8ad19
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -1295,6 +1340,7 @@ paths:
       summary: List watched plays for a user profile
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: userId
           in: path
           required: true
@@ -1319,10 +1365,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MyEngagementPlayListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -1336,6 +1386,7 @@ paths:
       summary: List published reviews for a user profile
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: userId
           in: path
           required: true
@@ -1360,10 +1411,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserReviewListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -1379,12 +1434,15 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: Own profile loaded
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1405,6 +1463,8 @@ paths:
                         reviewsCount: 3
                     error: null
                     requestId: req-08f49dbe29774f36b234fd5f9ab7a1df
+        '304':
+          $ref: '#/components/responses/NotModified'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1459,6 +1519,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: cursor
           in: query
           required: false
@@ -1477,10 +1538,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserReviewListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1498,6 +1563,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: userId
           in: path
           required: true
@@ -1601,10 +1667,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -1618,6 +1688,7 @@ paths:
       summary: List followings for a user
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: userId
           in: path
           required: true
@@ -1642,10 +1713,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
@@ -1661,6 +1736,7 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: cursor
           in: query
           required: false
@@ -1679,10 +1755,14 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FollowListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1702,13 +1782,34 @@ components:
       schema:
         type: string
 
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: Existing ETag value from a previous response. If the representation did not change, server returns `304`.
+      schema:
+        type: string
+
   headers:
     XRequestID:
       description: Request correlation ID.
       schema:
         type: string
 
+    ETag:
+      description: Entity tag for conditional cache validation.
+      schema:
+        type: string
+
   responses:
+    NotModified:
+      description: Representation has not changed since the provided ETag.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+        ETag:
+          $ref: '#/components/headers/ETag'
+
     ValidationError:
       description: Request validation failed
       headers:

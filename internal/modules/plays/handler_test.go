@@ -261,6 +261,40 @@ func TestHandlerFeedInvalidLimitReturnsValidation(t *testing.T) {
 	}
 }
 
+func TestHandlerFeedReturnsNotModifiedWhenETagMatches(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{feedFn: func(ctx context.Context, query FeedQuery) (FeedData, error) {
+		return FeedData{Items: []PlayCardData{{ID: "00000000-0000-0000-0000-000000000201", Title: "Hamlet"}}}, nil
+	}})
+	router.GET("/v1/feed", handler.Feed)
+
+	firstRecorder := httptest.NewRecorder()
+	firstRequest := httptest.NewRequest(http.MethodGet, "/v1/feed?section=highlighted&limit=10", nil)
+	router.ServeHTTP(firstRecorder, firstRequest)
+
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, firstRecorder.Code)
+	}
+
+	etag := firstRecorder.Header().Get(httpx.ETagHeader)
+	if etag == "" {
+		t.Fatalf("expected etag header")
+	}
+
+	secondRecorder := httptest.NewRecorder()
+	secondRequest := httptest.NewRequest(http.MethodGet, "/v1/feed?section=highlighted&limit=10", nil)
+	secondRequest.Header.Set(httpx.IfNoneMatchHeader, etag)
+	router.ServeHTTP(secondRecorder, secondRequest)
+
+	if secondRecorder.Code != http.StatusNotModified {
+		t.Fatalf("expected status %d, got %d", http.StatusNotModified, secondRecorder.Code)
+	}
+}
+
 func TestHandlerSearchSuccess(t *testing.T) {
 	t.Parallel()
 

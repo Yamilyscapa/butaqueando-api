@@ -55,7 +55,7 @@ func (h *Handler) Feed(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) Search(c *gin.Context) {
@@ -71,7 +71,7 @@ func (h *Handler) Search(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) GetByID(c *gin.Context) {
@@ -81,7 +81,7 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListReviews(c *gin.Context) {
@@ -97,7 +97,7 @@ func (h *Handler) ListReviews(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) CreateReview(c *gin.Context) {
@@ -240,7 +240,7 @@ func (h *Handler) ListUserWatched(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListUserReviews(c *gin.Context) {
@@ -256,7 +256,7 @@ func (h *Handler) ListUserReviews(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) CreateSubmission(c *gin.Context) {
@@ -300,7 +300,7 @@ func (h *Handler) ListMyBookmarks(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMyWatched(c *gin.Context) {
@@ -322,7 +322,7 @@ func (h *Handler) ListMyWatched(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMyReviews(c *gin.Context) {
@@ -344,7 +344,7 @@ func (h *Handler) ListMyReviews(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMySubmissions(c *gin.Context) {
@@ -366,7 +366,7 @@ func (h *Handler) ListMySubmissions(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) UpdateMySubmission(c *gin.Context) {
@@ -411,7 +411,7 @@ func (h *Handler) ListAdminSubmissions(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ApproveSubmission(c *gin.Context) {

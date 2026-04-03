@@ -122,9 +122,10 @@ Theater information and social opinion are fragmented. Users need one place to:
 
 - Public profile includes:
   - bio/basic data
-  - watched plays
-  - ratings/reviews
   - follower/following counters
+- Watched plays and ratings/reviews are provided through dedicated paginated profile endpoints:
+  - `GET /v1/users/:userId/watched`
+  - `GET /v1/users/:userId/reviews`
 
 ### FR-09 Community Play Submission
 
@@ -306,7 +307,7 @@ Only `published` plays can be ranked in public highlighted feeds.
 5. Rejected submission can be edited and resubmitted on the same record.
 6. User can bookmark and mark watched without duplicates.
 7. User can rate (1-5) and maintain one review per play.
-8. Profile endpoint returns watched plays and user ratings/reviews.
+8. Public profile endpoint returns bio/basic data and counters; watched plays and ratings/reviews are returned through their dedicated paginated profile endpoints.
 9. All list endpoints support cursor pagination.
 10. API uses a standardized error response contract.
 11. Users can follow/unfollow others, cannot self-follow, and can list followings without duplicates.

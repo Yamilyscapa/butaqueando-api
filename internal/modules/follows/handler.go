@@ -79,7 +79,7 @@ func (h *Handler) MyFollowings(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) UserFollowers(c *gin.Context) {
@@ -95,7 +95,7 @@ func (h *Handler) UserFollowers(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) UserFollowings(c *gin.Context) {
@@ -111,7 +111,7 @@ func (h *Handler) UserFollowings(c *gin.Context) {
 		return
 	}
 
-	httpx.WriteData(c, http.StatusOK, data)
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) notImplemented(c *gin.Context) {

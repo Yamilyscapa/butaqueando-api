@@ -138,3 +138,37 @@ func TestHandlerUserFollowersSuccess(t *testing.T) {
 		t.Fatalf("expected no error payload")
 	}
 }
+
+func TestHandlerUserFollowersReturnsNotModifiedWhenETagMatches(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{listFollowersFn: func(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error) {
+		return FollowListData{Items: []FollowListItemData{{ID: "00000000-0000-0000-0000-000000000001", DisplayName: "Ana", FollowedAt: "2026-03-31T12:00:00Z"}}}, nil
+	}})
+	router.GET("/v1/users/:userId/followers", handler.UserFollowers)
+
+	firstRecorder := httptest.NewRecorder()
+	firstRequest := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/followers?limit=10", nil)
+	router.ServeHTTP(firstRecorder, firstRequest)
+
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, firstRecorder.Code)
+	}
+
+	etag := firstRecorder.Header().Get(httpx.ETagHeader)
+	if etag == "" {
+		t.Fatalf("expected etag header")
+	}
+
+	secondRecorder := httptest.NewRecorder()
+	secondRequest := httptest.NewRequest(http.MethodGet, "/v1/users/00000000-0000-0000-0000-000000000002/followers?limit=10", nil)
+	secondRequest.Header.Set(httpx.IfNoneMatchHeader, etag)
+	router.ServeHTTP(secondRecorder, secondRequest)
+
+	if secondRecorder.Code != http.StatusNotModified {
+		t.Fatalf("expected status %d, got %d", http.StatusNotModified, secondRecorder.Code)
+	}
+}
