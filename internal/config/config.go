@@ -21,6 +21,9 @@ type Config struct {
 	S3UploadURLTTL              time.Duration
 	S3DownloadURLTTL            time.Duration
 	S3MaxImageBytes             int64
+	ImageOptimizationEnabled    bool
+	ImageWebPQuality            int
+	ImageWorkerPoolSize         int
 	PlaysS3                     S3BucketConfig
 	UsersS3                     S3BucketConfig
 	JWTIssuer                   string
@@ -88,6 +91,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	imageOptimizationEnabled, err := boolFromEnvStrict("IMAGE_OPTIMIZATION_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+
+	imageWebPQuality := intFromEnv("IMAGE_WEBP_QUALITY", 80)
+	imageWorkerPoolSize := intFromEnv("IMAGE_WORKER_POOL_SIZE", 2)
+
 	playsS3 := S3BucketConfig{
 		Endpoint:        strings.TrimSpace(os.Getenv("PLAYS_S3_ENDPOINT")),
 		Region:          strings.TrimSpace(os.Getenv("PLAYS_S3_REGION")),
@@ -114,6 +125,9 @@ func Load() (Config, error) {
 		S3UploadURLTTL:              s3UploadURLTTL,
 		S3DownloadURLTTL:            s3DownloadURLTTL,
 		S3MaxImageBytes:             s3MaxImageBytes,
+		ImageOptimizationEnabled:    imageOptimizationEnabled,
+		ImageWebPQuality:            imageWebPQuality,
+		ImageWorkerPoolSize:         imageWorkerPoolSize,
 		PlaysS3:                     playsS3,
 		UsersS3:                     usersS3,
 		JWTIssuer:                   envOrDefault("JWT_ISSUER", "butaqueando-api"),
@@ -177,6 +191,14 @@ func Load() (Config, error) {
 
 	if cfg.S3MaxImageBytes <= 0 {
 		return Config{}, fmt.Errorf("S3_MAX_IMAGE_BYTES must be greater than 0")
+	}
+
+	if cfg.ImageWebPQuality < 1 || cfg.ImageWebPQuality > 100 {
+		return Config{}, fmt.Errorf("IMAGE_WEBP_QUALITY must be between 1 and 100")
+	}
+
+	if cfg.ImageWorkerPoolSize <= 0 {
+		return Config{}, fmt.Errorf("IMAGE_WORKER_POOL_SIZE must be greater than 0")
 	}
 
 	if err := validateS3BucketConfig(cfg.PlaysS3, "PLAYS"); err != nil {

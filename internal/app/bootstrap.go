@@ -10,6 +10,7 @@ import (
 	authmodule "github.com/butaqueando/api/internal/modules/auth"
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/storage"
+	"github.com/butaqueando/api/internal/shared/worker"
 )
 
 func Bootstrap() (*Application, error) {
@@ -60,6 +61,11 @@ func Bootstrap() (*Application, error) {
 		return nil, fmt.Errorf("build users storage client: %w", err)
 	}
 
+	imageQueue := worker.NewQueue(cfg.ImageWorkerPoolSize)
+	if cfg.ImageOptimizationEnabled {
+		imageQueue.Start()
+	}
+
 	router := apihttp.NewRouter(apihttp.Dependencies{
 		DB: db,
 		TokenConfig: authmodule.TokenConfig{
@@ -80,6 +86,9 @@ func Bootstrap() (*Application, error) {
 		S3UploadURLTTL:            cfg.S3UploadURLTTL,
 		S3DownloadURLTTL:          cfg.S3DownloadURLTTL,
 		S3MaxImageBytes:           cfg.S3MaxImageBytes,
+		ImageQueue:                imageQueue,
+		ImageOptimizationEnabled:  cfg.ImageOptimizationEnabled,
+		ImageWebPQuality:          cfg.ImageWebPQuality,
 	})
 
 	return &Application{
@@ -87,5 +96,6 @@ func Bootstrap() (*Application, error) {
 		Router: router,
 		DB:     db,
 		SQLDB:  sqlDB,
+		Worker: imageQueue,
 	}, nil
 }

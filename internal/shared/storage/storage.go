@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -40,6 +41,17 @@ type HeadObjectInput struct {
 	ObjectKey string
 }
 
+type GetObjectInput struct {
+	ObjectKey string
+}
+
+type PutObjectInput struct {
+	ObjectKey    string
+	Content      []byte
+	ContentType  string
+	CacheControl string
+}
+
 type HeadObjectOutput struct {
 	ContentType   string
 	ContentLength int64
@@ -50,6 +62,8 @@ type Client interface {
 	PresignPutObject(ctx context.Context, input PresignPutObjectInput) (string, error)
 	PresignGetObject(ctx context.Context, input PresignGetObjectInput) (string, error)
 	HeadObject(ctx context.Context, input HeadObjectInput) (HeadObjectOutput, error)
+	GetObject(ctx context.Context, input GetObjectInput) ([]byte, error)
+	PutObject(ctx context.Context, input PutObjectInput) error
 }
 
 type S3Client struct {
@@ -196,6 +210,68 @@ func (c *S3Client) HeadObject(ctx context.Context, input HeadObjectInput) (HeadO
 	return result, nil
 }
 
+func (c *S3Client) GetObject(ctx context.Context, input GetObjectInput) ([]byte, error) {
+	if c == nil || c.client == nil {
+		return nil, ErrClientNotConfigured
+	}
+
+	key := strings.TrimSpace(input.ObjectKey)
+	if key == "" {
+		return nil, fmt.Errorf("object key is required")
+	}
+
+	response, err := c.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(c.bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	defer response.Body.Close()
+
+	buf := &bytes.Buffer{}
+	if _, err := buf.ReadFrom(response.Body); err != nil {
+		return nil, fmt.Errorf("read object: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (c *S3Client) PutObject(ctx context.Context, input PutObjectInput) error {
+	if c == nil || c.client == nil {
+		return ErrClientNotConfigured
+	}
+
+	key := strings.TrimSpace(input.ObjectKey)
+	if key == "" {
+		return fmt.Errorf("object key is required")
+	}
+
+	contentType := strings.TrimSpace(input.ContentType)
+	if contentType == "" {
+		return fmt.Errorf("content type is required")
+	}
+
+	if len(input.Content) == 0 {
+		return fmt.Errorf("content must not be empty")
+	}
+
+	putInput := &s3.PutObjectInput{
+		Bucket:      aws.String(c.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(input.Content),
+		ContentType: aws.String(contentType),
+	}
+
+	cacheControl := strings.TrimSpace(input.CacheControl)
+	if cacheControl != "" {
+		putInput.CacheControl = aws.String(cacheControl)
+	}
+
+	if _, err := c.client.PutObject(ctx, putInput); err != nil {
+		return fmt.Errorf("put object: %w", err)
+	}
+
+	return nil
+}
+
 func IsNotFoundError(err error) bool {
 	if err == nil {
 		return false
@@ -226,4 +302,12 @@ func (NoopClient) PresignGetObject(_ context.Context, _ PresignGetObjectInput) (
 
 func (NoopClient) HeadObject(_ context.Context, _ HeadObjectInput) (HeadObjectOutput, error) {
 	return HeadObjectOutput{}, ErrClientNotConfigured
+}
+
+func (NoopClient) GetObject(_ context.Context, _ GetObjectInput) ([]byte, error) {
+	return nil, ErrClientNotConfigured
+}
+
+func (NoopClient) PutObject(_ context.Context, _ PutObjectInput) error {
+	return ErrClientNotConfigured
 }

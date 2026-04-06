@@ -8,7 +8,9 @@ import (
 	"time"
 
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/butaqueando/api/internal/shared/imageproc"
 	"github.com/butaqueando/api/internal/shared/storage"
+	"github.com/butaqueando/api/internal/shared/worker"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -32,9 +34,59 @@ type Service struct {
 	mediaUploadTTL   time.Duration
 	maxImageBytes    int64
 	userMediaBaseURL string
+	imageQueue       ImageQueue
+	optimizeEnabled  bool
+	webpQuality      int
 }
 
 type ServiceOption func(*Service)
+
+type ImageQueue interface {
+	Enqueue(job worker.Job) bool
+}
+
+type ImageJob interface {
+	Run(ctx context.Context) error
+	Name() string
+}
+
+type OptimizeAvatarJob struct {
+	Storage      storage.Client
+	ObjectKey    string
+	Quality      int
+	CacheControl string
+}
+
+func (j OptimizeAvatarJob) Name() string {
+	return "optimize-user-avatar"
+}
+
+func (j OptimizeAvatarJob) Run(ctx context.Context) error {
+	if j.Storage == nil {
+		return storage.ErrClientNotConfigured
+	}
+
+	content, err := j.Storage.GetObject(ctx, storage.GetObjectInput{ObjectKey: j.ObjectKey})
+	if err != nil {
+		return err
+	}
+
+	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{Quality: j.Quality})
+	if err != nil {
+		return err
+	}
+
+	if !result.Optimized {
+		return nil
+	}
+
+	return j.Storage.PutObject(ctx, storage.PutObjectInput{
+		ObjectKey:    j.ObjectKey,
+		Content:      result.Content,
+		ContentType:  result.ContentType,
+		CacheControl: j.CacheControl,
+	})
+}
 
 func WithMediaStorage(mediaStorage storage.Client) ServiceOption {
 	return func(s *Service) {
@@ -60,6 +112,19 @@ func WithUserMediaBaseURL(baseURL string) ServiceOption {
 	}
 }
 
+func WithImageQueue(queue ImageQueue) ServiceOption {
+	return func(s *Service) {
+		s.imageQueue = queue
+	}
+}
+
+func WithImageOptimization(enabled bool, webpQuality int) ServiceOption {
+	return func(s *Service) {
+		s.optimizeEnabled = enabled
+		s.webpQuality = webpQuality
+	}
+}
+
 func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 	service := &Service{
 		repo:             repo,
@@ -67,6 +132,8 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 		mediaUploadTTL:   defaultUploadURLTTL,
 		maxImageBytes:    defaultMaxImageBytes,
 		userMediaBaseURL: defaultUserMediaPrefix,
+		optimizeEnabled:  true,
+		webpQuality:      80,
 	}
 
 	for _, option := range options {
@@ -89,6 +156,10 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 
 	if strings.TrimSpace(service.userMediaBaseURL) == "" {
 		service.userMediaBaseURL = defaultUserMediaPrefix
+	}
+
+	if service.webpQuality <= 0 || service.webpQuality > 100 {
+		service.webpQuality = 80
 	}
 
 	return service
@@ -174,6 +245,15 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 		}
 
 		return MeProfileData{}, sharederrors.Internal("failed to update profile", nil)
+	}
+
+	if patch.AvatarObjectKeySet && patch.AvatarObjectKey != nil && s.optimizeEnabled && s.imageQueue != nil {
+		s.imageQueue.Enqueue(OptimizeAvatarJob{
+			Storage:      s.mediaStorage,
+			ObjectKey:    *patch.AvatarObjectKey,
+			Quality:      s.webpQuality,
+			CacheControl: "public, max-age=31536000, immutable",
+		})
 	}
 
 	return mapMeProfileRecord(record, s.userMediaBaseURL), nil

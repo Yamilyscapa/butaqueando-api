@@ -14,6 +14,7 @@ import (
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/httpx"
 	"github.com/butaqueando/api/internal/shared/storage"
+	"github.com/butaqueando/api/internal/shared/worker"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -32,6 +33,9 @@ type Dependencies struct {
 	S3UploadURLTTL            time.Duration
 	S3DownloadURLTTL          time.Duration
 	S3MaxImageBytes           int64
+	ImageQueue                *worker.Queue
+	ImageOptimizationEnabled  bool
+	ImageWebPQuality          int
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -98,6 +102,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		MediaStorage:      usersStorage,
 		UploadURLTTL:      deps.S3UploadURLTTL,
 		MaxImageBytes:     deps.S3MaxImageBytes,
+		ImageQueue:        deps.ImageQueue,
+		OptimizeImages:    deps.ImageOptimizationEnabled,
+		WebPQuality:       deps.ImageWebPQuality,
 	})
 	plays.RegisterRoutes(v1, plays.Dependencies{
 		DB:                deps.DB,
@@ -105,6 +112,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		MediaStorage:      playsStorage,
 		UploadURLTTL:      deps.S3UploadURLTTL,
 		MaxImageBytes:     deps.S3MaxImageBytes,
+		ImageQueue:        deps.ImageQueue,
+		OptimizeImages:    deps.ImageOptimizationEnabled,
+		WebPQuality:       deps.ImageWebPQuality,
 	})
 	media.RegisterRoutes(v1, media.Dependencies{
 		DB:             deps.DB,

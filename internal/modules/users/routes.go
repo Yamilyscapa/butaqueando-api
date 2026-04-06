@@ -17,6 +17,9 @@ type Dependencies struct {
 	MediaStorage      storage.Client
 	UploadURLTTL      time.Duration
 	MaxImageBytes     int64
+	ImageQueue        ImageQueue
+	OptimizeImages    bool
+	WebPQuality       int
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
@@ -26,6 +29,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 		WithMediaStorage(deps.MediaStorage),
 		WithMediaUploadTTL(deps.UploadURLTTL),
 		WithMaxImageBytes(deps.MaxImageBytes),
+		WithImageQueue(deps.ImageQueue),
+		WithImageOptimization(deps.OptimizeImages, deps.WebPQuality),
 	)
 	handler := NewHandler(service)
 	group := v1.Group(BasePath)
