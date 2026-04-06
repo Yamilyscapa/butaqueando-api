@@ -44,3 +44,18 @@ All seeded users share the password: `password`
 - `views/`: derived read models
 - `migrations/`: SQL migrations managed by Go tooling
 - `smoke_tests_prd/`: PRD invariant smoke tests
+
+## Media storage notes (v1)
+
+- `app.play_media` stores `object_key` (not public URL).
+- `app.play_media` uniqueness is `(play_id, object_key)`.
+- `app.user_profiles.avatar_object_key` is nullable (avatar is optional).
+- Read URLs for media are generated at API layer via stable endpoints + redirect to pre-signed bucket URLs.
+
+## Latest migration
+
+- `000002_media_storage_refactor.up.sql`
+  - renames `app.play_media.url` -> `object_key`
+  - updates media uniqueness constraint
+  - adds `app.user_profiles.avatar_object_key`
+- `000002_media_storage_refactor.down.sql` reverts those changes.

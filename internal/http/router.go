@@ -8,10 +8,12 @@ import (
 	"github.com/butaqueando/api/internal/modules/auth"
 	"github.com/butaqueando/api/internal/modules/follows"
 	"github.com/butaqueando/api/internal/modules/health"
+	"github.com/butaqueando/api/internal/modules/media"
 	"github.com/butaqueando/api/internal/modules/plays"
 	"github.com/butaqueando/api/internal/modules/users"
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/httpx"
+	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -25,6 +27,11 @@ type Dependencies struct {
 	EmailVerificationRedirect string
 	PasswordResetRedirect     string
 	PasswordResetTokenTTL     time.Duration
+	PlaysStorage              storage.Client
+	UsersStorage              storage.Client
+	S3UploadURLTTL            time.Duration
+	S3DownloadURLTTL          time.Duration
+	S3MaxImageBytes           int64
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -36,6 +43,16 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 
 		return middleware.AccessTokenClaims{UserID: claims.UserID, Role: claims.Role}, nil
+	}
+
+	playsStorage := deps.PlaysStorage
+	if playsStorage == nil {
+		playsStorage = storage.NoopClient{}
+	}
+
+	usersStorage := deps.UsersStorage
+	if usersStorage == nil {
+		usersStorage = storage.NoopClient{}
 	}
 
 	router := gin.New()
@@ -75,8 +92,26 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		PasswordResetRedirect:     deps.PasswordResetRedirect,
 		PasswordResetTokenTTL:     deps.PasswordResetTokenTTL,
 	})
-	users.RegisterRoutes(v1, users.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
-	plays.RegisterRoutes(v1, plays.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
+	users.RegisterRoutes(v1, users.Dependencies{
+		DB:                deps.DB,
+		AccessTokenParser: accessTokenParser,
+		MediaStorage:      usersStorage,
+		UploadURLTTL:      deps.S3UploadURLTTL,
+		MaxImageBytes:     deps.S3MaxImageBytes,
+	})
+	plays.RegisterRoutes(v1, plays.Dependencies{
+		DB:                deps.DB,
+		AccessTokenParser: accessTokenParser,
+		MediaStorage:      playsStorage,
+		UploadURLTTL:      deps.S3UploadURLTTL,
+		MaxImageBytes:     deps.S3MaxImageBytes,
+	})
+	media.RegisterRoutes(v1, media.Dependencies{
+		DB:             deps.DB,
+		PlaysStorage:   playsStorage,
+		UsersStorage:   usersStorage,
+		DownloadURLTTL: deps.S3DownloadURLTTL,
+	})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 
 	return router

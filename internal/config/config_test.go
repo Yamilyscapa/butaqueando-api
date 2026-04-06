@@ -2,14 +2,32 @@ package config
 
 import "testing"
 
-func TestLoadRejectsDisabledEmailVerificationInProduction(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
+func setCommonEnv(t *testing.T) {
+	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("JWT_ISSUER", "butaqueando-api")
 	t.Setenv("JWT_ACCESS_SECRET", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	t.Setenv("JWT_REFRESH_SECRET", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	t.Setenv("JWT_ACCESS_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TTL", "720h")
+	t.Setenv("PLAYS_S3_ENDPOINT", "https://storage.railway.app")
+	t.Setenv("PLAYS_S3_REGION", "auto")
+	t.Setenv("PLAYS_S3_ACCESS_KEY_ID", "plays-access")
+	t.Setenv("PLAYS_S3_SECRET_ACCESS_KEY", "plays-secret")
+	t.Setenv("PLAYS_S3_BUCKET", "plays-bucket")
+	t.Setenv("USERS_S3_ENDPOINT", "https://storage.railway.app")
+	t.Setenv("USERS_S3_REGION", "auto")
+	t.Setenv("USERS_S3_ACCESS_KEY_ID", "users-access")
+	t.Setenv("USERS_S3_SECRET_ACCESS_KEY", "users-secret")
+	t.Setenv("USERS_S3_BUCKET", "users-bucket")
+	t.Setenv("S3_UPLOAD_URL_TTL", "15m")
+	t.Setenv("S3_DOWNLOAD_URL_TTL", "15m")
+	t.Setenv("S3_MAX_IMAGE_BYTES", "10485760")
+}
+
+func TestLoadRejectsDisabledEmailVerificationInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "false")
 	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
 	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "https://app.butaqueando.com/reset-password")
@@ -22,12 +40,7 @@ func TestLoadRejectsDisabledEmailVerificationInProduction(t *testing.T) {
 
 func TestLoadAllowsEnabledEmailVerificationInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("JWT_ISSUER", "butaqueando-api")
-	t.Setenv("JWT_ACCESS_SECRET", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	t.Setenv("JWT_REFRESH_SECRET", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	t.Setenv("JWT_ACCESS_TTL", "15m")
-	t.Setenv("JWT_REFRESH_TTL", "720h")
+	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
 	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
 	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "https://app.butaqueando.com/reset-password")
@@ -46,12 +59,7 @@ func TestLoadAllowsEnabledEmailVerificationInProduction(t *testing.T) {
 
 func TestLoadRejectsMissingPasswordResetRedirectInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("JWT_ISSUER", "butaqueando-api")
-	t.Setenv("JWT_ACCESS_SECRET", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	t.Setenv("JWT_REFRESH_SECRET", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	t.Setenv("JWT_ACCESS_TTL", "15m")
-	t.Setenv("JWT_REFRESH_TTL", "720h")
+	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
 	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
 	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "")
@@ -66,12 +74,7 @@ func TestLoadRejectsMissingPasswordResetRedirectInProduction(t *testing.T) {
 
 func TestLoadRejectsMissingVerificationRedirectWhenVerificationRequired(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("JWT_ISSUER", "butaqueando-api")
-	t.Setenv("JWT_ACCESS_SECRET", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	t.Setenv("JWT_REFRESH_SECRET", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	t.Setenv("JWT_ACCESS_TTL", "15m")
-	t.Setenv("JWT_REFRESH_TTL", "720h")
+	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
 	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "")
 

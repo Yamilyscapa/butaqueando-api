@@ -80,7 +80,7 @@ func (r *Repository) ListFeed(ctx context.Context, params FeedListParams) ([]Pla
 				prs.avg_rating,
 				COALESCE(prs.review_count, 0) AS review_count,
 				`+trendScoreSQL+` AS trend_score,
-				media.poster_url
+				media.poster_media_id
 			`).
 			Joins(`
 				LEFT JOIN (
@@ -339,7 +339,7 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 	var rows []playMediaRow
 	err = r.db.WithContext(ctx).
 		Table("app.play_media").
-		Select("kind, url, alt_text, sort_order").
+		Select("id, kind, object_key, alt_text, sort_order").
 		Where("play_id = ?", playUUID).
 		Order("sort_order ASC").
 		Order("created_at ASC").
@@ -350,7 +350,7 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 
 	media := make([]PlayMediaRecord, 0, len(rows))
 	for _, row := range rows {
-		media = append(media, PlayMediaRecord{Kind: row.Kind, URL: row.URL, AltText: row.AltText, SortOrder: row.SortOrder})
+		media = append(media, PlayMediaRecord{ID: row.ID.String(), Kind: row.Kind, ObjectKey: row.ObjectKey, AltText: row.AltText, SortOrder: row.SortOrder})
 	}
 
 	return media, nil
@@ -479,7 +479,7 @@ func (r *Repository) ListUserPublishedReviews(ctx context.Context, userID string
 			p.city,
 			p.availability_status,
 			p.published_at,
-			media.poster_url,
+			media.poster_media_id,
 			r.rating,
 			r.title,
 			r.body,
@@ -490,7 +490,7 @@ func (r *Repository) ListUserPublishedReviews(ctx context.Context, userID string
 		Joins("JOIN app.plays AS p ON p.id = r.play_id").
 		Joins(`
 			LEFT JOIN LATERAL (
-				SELECT pm.url AS poster_url
+				SELECT pm.id AS poster_media_id
 				FROM app.play_media AS pm
 				WHERE pm.play_id = p.id
 				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
@@ -524,7 +524,7 @@ func (r *Repository) ListUserPublishedReviews(ctx context.Context, userID string
 			City:               row.City,
 			AvailabilityStatus: row.AvailabilityStatus,
 			PublishedAt:        row.PublishedAt,
-			PosterURL:          row.PosterURL,
+			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
 			Rating:             int(row.Rating),
 			Title:              row.Title,
 			Body:               row.Body,
@@ -873,14 +873,14 @@ func (r *Repository) ListUserEngagementPlays(ctx context.Context, userID string,
 			p.published_at,
 			prs.avg_rating,
 			COALESCE(prs.review_count, 0) AS review_count,
-			media.poster_url,
+			media.poster_media_id,
 			e.created_at AS engaged_at
 		`).
 		Joins("JOIN app.plays AS p ON p.id = e.play_id").
 		Joins("LEFT JOIN app.play_rating_stats AS prs ON prs.play_id = p.id").
 		Joins(`
 			LEFT JOIN LATERAL (
-				SELECT pm.url AS poster_url
+				SELECT pm.id AS poster_media_id
 				FROM app.play_media AS pm
 				WHERE pm.play_id = p.id
 				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
@@ -913,7 +913,7 @@ func (r *Repository) ListUserEngagementPlays(ctx context.Context, userID string,
 			City:               row.City,
 			AvailabilityStatus: row.AvailabilityStatus,
 			PublishedAt:        row.PublishedAt,
-			PosterURL:          row.PosterURL,
+			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
 			AverageRating:      row.AverageRating,
 			ReviewCount:        row.ReviewCount,
 			EngagedAt:          row.EngagedAt,
@@ -1211,6 +1211,38 @@ func (r *Repository) RejectSubmission(ctx context.Context, playID string, adminU
 	return r.getSubmissionByUUID(ctx, playUUID)
 }
 
+func (r *Repository) CreatePlayMedia(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	playUUID, err := parseUUID(params.PlayID)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	entity := playMediaEntity{
+		PlayID:    playUUID,
+		Kind:      params.Kind,
+		ObjectKey: params.ObjectKey,
+		AltText:   params.AltText,
+		SortOrder: params.SortOrder,
+		CreatedAt: params.CreatedAt,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	return PlayMediaRecord{
+		ID:        entity.ID.String(),
+		Kind:      entity.Kind,
+		ObjectKey: entity.ObjectKey,
+		AltText:   entity.AltText,
+		SortOrder: entity.SortOrder,
+	}, nil
+}
+
 func (r *Repository) basePlayListQuery(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).
 		Table("app.plays AS p").
@@ -1224,12 +1256,12 @@ func (r *Repository) basePlayListQuery(ctx context.Context) *gorm.DB {
 			prs.avg_rating,
 			COALESCE(prs.review_count, 0) AS review_count,
 			0::bigint AS trend_score,
-			media.poster_url
+			media.poster_media_id
 		`).
 		Joins("LEFT JOIN app.play_rating_stats AS prs ON prs.play_id = p.id").
 		Joins(`
 			LEFT JOIN LATERAL (
-				SELECT pm.url AS poster_url
+				SELECT pm.id AS poster_media_id
 				FROM app.play_media AS pm
 				WHERE pm.play_id = p.id
 				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
@@ -1306,7 +1338,7 @@ func mapPlayListRows(rows []playListRow) []PlayListRecord {
 			City:               row.City,
 			AvailabilityStatus: row.AvailabilityStatus,
 			PublishedAt:        row.PublishedAt,
-			PosterURL:          row.PosterURL,
+			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
 			AverageRating:      row.AverageRating,
 			ReviewCount:        row.ReviewCount,
 			TrendScore:         row.TrendScore,
@@ -1467,16 +1499,16 @@ func (r *Repository) ensureDB() error {
 }
 
 type playListRow struct {
-	ID                 uuid.UUID `gorm:"column:id"`
-	Title              string    `gorm:"column:title"`
-	TheaterName        string    `gorm:"column:theater_name"`
-	City               *string   `gorm:"column:city"`
-	AvailabilityStatus string    `gorm:"column:availability_status"`
-	PublishedAt        time.Time `gorm:"column:published_at"`
-	AverageRating      *float64  `gorm:"column:avg_rating"`
-	ReviewCount        int64     `gorm:"column:review_count"`
-	TrendScore         int64     `gorm:"column:trend_score"`
-	PosterURL          *string   `gorm:"column:poster_url"`
+	ID                 uuid.UUID  `gorm:"column:id"`
+	Title              string     `gorm:"column:title"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	PublishedAt        time.Time  `gorm:"column:published_at"`
+	AverageRating      *float64   `gorm:"column:avg_rating"`
+	ReviewCount        int64      `gorm:"column:review_count"`
+	TrendScore         int64      `gorm:"column:trend_score"`
+	PosterMediaID      *uuid.UUID `gorm:"column:poster_media_id"`
 }
 
 type playDetailsRow struct {
@@ -1494,16 +1526,16 @@ type playDetailsRow struct {
 }
 
 type engagementPlayRow struct {
-	ID                 uuid.UUID `gorm:"column:id"`
-	Title              string    `gorm:"column:title"`
-	TheaterName        string    `gorm:"column:theater_name"`
-	City               *string   `gorm:"column:city"`
-	AvailabilityStatus string    `gorm:"column:availability_status"`
-	PublishedAt        time.Time `gorm:"column:published_at"`
-	AverageRating      *float64  `gorm:"column:avg_rating"`
-	ReviewCount        int64     `gorm:"column:review_count"`
-	PosterURL          *string   `gorm:"column:poster_url"`
-	EngagedAt          time.Time `gorm:"column:engaged_at"`
+	ID                 uuid.UUID  `gorm:"column:id"`
+	Title              string     `gorm:"column:title"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	PublishedAt        time.Time  `gorm:"column:published_at"`
+	AverageRating      *float64   `gorm:"column:avg_rating"`
+	ReviewCount        int64      `gorm:"column:review_count"`
+	PosterMediaID      *uuid.UUID `gorm:"column:poster_media_id"`
+	EngagedAt          time.Time  `gorm:"column:engaged_at"`
 }
 
 type submissionRow struct {
@@ -1537,10 +1569,11 @@ type playCastRow struct {
 }
 
 type playMediaRow struct {
-	Kind      string  `gorm:"column:kind"`
-	URL       string  `gorm:"column:url"`
-	AltText   *string `gorm:"column:alt_text"`
-	SortOrder int     `gorm:"column:sort_order"`
+	ID        uuid.UUID `gorm:"column:id"`
+	Kind      string    `gorm:"column:kind"`
+	ObjectKey string    `gorm:"column:object_key"`
+	AltText   *string   `gorm:"column:alt_text"`
+	SortOrder int       `gorm:"column:sort_order"`
 }
 
 type reviewRow struct {
@@ -1556,20 +1589,20 @@ type reviewRow struct {
 }
 
 type userReviewRow struct {
-	ID                 uuid.UUID `gorm:"column:id"`
-	PlayID             uuid.UUID `gorm:"column:play_id"`
-	PlayTitle          string    `gorm:"column:play_title"`
-	TheaterName        string    `gorm:"column:theater_name"`
-	City               *string   `gorm:"column:city"`
-	AvailabilityStatus string    `gorm:"column:availability_status"`
-	PublishedAt        time.Time `gorm:"column:published_at"`
-	PosterURL          *string   `gorm:"column:poster_url"`
-	Rating             int16     `gorm:"column:rating"`
-	Title              *string   `gorm:"column:title"`
-	Body               string    `gorm:"column:body"`
-	ContainsSpoilers   bool      `gorm:"column:contains_spoilers"`
-	CreatedAt          time.Time `gorm:"column:created_at"`
-	UpdatedAt          time.Time `gorm:"column:updated_at"`
+	ID                 uuid.UUID  `gorm:"column:id"`
+	PlayID             uuid.UUID  `gorm:"column:play_id"`
+	PlayTitle          string     `gorm:"column:play_title"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	PublishedAt        time.Time  `gorm:"column:published_at"`
+	PosterMediaID      *uuid.UUID `gorm:"column:poster_media_id"`
+	Rating             int16      `gorm:"column:rating"`
+	Title              *string    `gorm:"column:title"`
+	Body               string     `gorm:"column:body"`
+	ContainsSpoilers   bool       `gorm:"column:contains_spoilers"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
 type reviewMetadataRow struct {
@@ -1629,8 +1662,22 @@ type playEntity struct {
 	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
+type playMediaEntity struct {
+	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	PlayID    uuid.UUID `gorm:"column:play_id;type:uuid"`
+	Kind      string    `gorm:"column:kind"`
+	ObjectKey string    `gorm:"column:object_key"`
+	AltText   *string   `gorm:"column:alt_text"`
+	SortOrder int       `gorm:"column:sort_order"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
 func (playEntity) TableName() string {
 	return "app.plays"
+}
+
+func (playMediaEntity) TableName() string {
+	return "app.play_media"
 }
 
 func (reviewEntity) TableName() string {

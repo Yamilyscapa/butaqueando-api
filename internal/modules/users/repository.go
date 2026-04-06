@@ -59,13 +59,14 @@ func (r *Repository) GetPublicProfile(ctx context.Context, userID string) (Publi
 	}
 
 	return PublicProfileRecord{
-		ID:             user.ID.String(),
-		DisplayName:    user.DisplayName,
-		Bio:            profile.Bio,
-		FollowersCount: followersCount,
-		FollowingCount: followingCount,
-		WatchedCount:   watchedCount,
-		ReviewsCount:   reviewsCount,
+		ID:              user.ID.String(),
+		DisplayName:     user.DisplayName,
+		Bio:             profile.Bio,
+		AvatarObjectKey: profile.AvatarObjectKey,
+		FollowersCount:  followersCount,
+		FollowingCount:  followingCount,
+		WatchedCount:    watchedCount,
+		ReviewsCount:    reviewsCount,
 	}, nil
 }
 
@@ -112,15 +113,16 @@ func (r *Repository) GetMeProfile(ctx context.Context, userID string) (MeProfile
 	}
 
 	return MeProfileRecord{
-		ID:             user.ID.String(),
-		DisplayName:    user.DisplayName,
-		Email:          user.Email,
-		Role:           user.Role,
-		Bio:            profile.Bio,
-		FollowersCount: followersCount,
-		FollowingCount: followingCount,
-		WatchedCount:   watchedCount,
-		ReviewsCount:   reviewsCount,
+		ID:              user.ID.String(),
+		DisplayName:     user.DisplayName,
+		Email:           user.Email,
+		Role:            user.Role,
+		Bio:             profile.Bio,
+		AvatarObjectKey: profile.AvatarObjectKey,
+		FollowersCount:  followersCount,
+		FollowingCount:  followingCount,
+		WatchedCount:    watchedCount,
+		ReviewsCount:    reviewsCount,
 	}, nil
 }
 
@@ -152,10 +154,19 @@ func (r *Repository) UpdateMeProfile(ctx context.Context, userID string, patch U
 			}
 		}
 
-		if patch.BioSet {
+		if patch.BioSet || patch.AvatarObjectKeySet {
+			updates := map[string]any{}
+			if patch.BioSet {
+				updates["bio"] = patch.Bio
+			}
+
+			if patch.AvatarObjectKeySet {
+				updates["avatar_object_key"] = patch.AvatarObjectKey
+			}
+
 			result := tx.Model(&userProfileEntity{}).
 				Where("user_id = ?", userUUID).
-				Update("bio", patch.Bio)
+				Updates(updates)
 			if result.Error != nil {
 				return result.Error
 			}
@@ -163,8 +174,16 @@ func (r *Repository) UpdateMeProfile(ctx context.Context, userID string, patch U
 			if result.RowsAffected == 0 {
 				profile := userProfileEntity{
 					UserID: userUUID,
-					Bio:    patch.Bio,
 				}
+
+				if patch.BioSet {
+					profile.Bio = patch.Bio
+				}
+
+				if patch.AvatarObjectKeySet {
+					profile.AvatarObjectKey = patch.AvatarObjectKey
+				}
+
 				if err := tx.Create(&profile).Error; err != nil {
 					return err
 				}
@@ -237,8 +256,9 @@ func (userEntity) TableName() string {
 }
 
 type userProfileEntity struct {
-	UserID uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey"`
-	Bio    *string   `gorm:"column:bio"`
+	UserID          uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey"`
+	Bio             *string   `gorm:"column:bio"`
+	AvatarObjectKey *string   `gorm:"column:avatar_object_key"`
 }
 
 func (userProfileEntity) TableName() string {

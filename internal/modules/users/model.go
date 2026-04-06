@@ -13,6 +13,7 @@ type MeProfileData struct {
 	Email       string           `json:"email"`
 	Role        string           `json:"role"`
 	Bio         *string          `json:"bio"`
+	AvatarURL   *string          `json:"avatarUrl"`
 	Stats       ProfileStatsData `json:"stats"`
 }
 
@@ -20,39 +21,55 @@ type PublicProfileData struct {
 	ID          string           `json:"id"`
 	DisplayName string           `json:"displayName"`
 	Bio         *string          `json:"bio"`
+	AvatarURL   *string          `json:"avatarUrl"`
 	Stats       ProfileStatsData `json:"stats"`
 }
 
 type UpdateMeProfileRequest struct {
-	DisplayName *string `json:"displayName"`
-	Bio         *string `json:"bio"`
+	DisplayName     *string `json:"displayName"`
+	Bio             *string `json:"bio"`
+	AvatarObjectKey *string `json:"avatarObjectKey"`
+}
+
+type CreateAvatarUploadRequest struct {
+	ContentType   string `json:"contentType"`
+	ContentLength int64  `json:"contentLength"`
+}
+
+type CreateAvatarUploadData struct {
+	ObjectKey string `json:"objectKey"`
+	UploadURL string `json:"uploadUrl"`
 }
 
 type UpdateMeProfilePatch struct {
-	DisplayNameSet bool
-	DisplayName    *string
-	BioSet         bool
-	Bio            *string
+	DisplayNameSet     bool
+	DisplayName        *string
+	BioSet             bool
+	Bio                *string
+	AvatarObjectKeySet bool
+	AvatarObjectKey    *string
 }
 
 type MeProfileRecord struct {
-	ID             string
-	DisplayName    string
-	Email          string
-	Role           string
-	Bio            *string
-	FollowersCount int64
-	FollowingCount int64
-	WatchedCount   int64
-	ReviewsCount   int64
+	ID              string
+	DisplayName     string
+	Email           string
+	Role            string
+	Bio             *string
+	AvatarObjectKey *string
+	FollowersCount  int64
+	FollowingCount  int64
+	WatchedCount    int64
+	ReviewsCount    int64
 }
 
 type PublicProfileRecord struct {
-	ID             string
-	DisplayName    string
-	Bio            *string
-	FollowersCount int64
-	FollowingCount int64
-	WatchedCount   int64
-	ReviewsCount   int64
+	ID              string
+	DisplayName     string
+	Bio             *string
+	AvatarObjectKey *string
+	FollowersCount  int64
+	FollowingCount  int64
+	WatchedCount    int64
+	ReviewsCount    int64
 }

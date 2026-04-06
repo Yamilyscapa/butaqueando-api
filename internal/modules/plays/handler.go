@@ -22,6 +22,8 @@ type servicePort interface {
 	ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	ListUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
+	CreateSubmissionMediaUpload(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	AttachSubmissionMedia(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
 	ListMyBookmarks(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	ListMyWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
@@ -452,4 +454,48 @@ func (h *Handler) RejectSubmission(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) CreateSubmissionMediaUpload(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateSubmissionMediaUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreateSubmissionMediaUpload(c.Request.Context(), userID, c.Param("playId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) AttachSubmissionMedia(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req AttachSubmissionMediaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.AttachSubmissionMedia(c.Request.Context(), userID, c.Param("playId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
 }

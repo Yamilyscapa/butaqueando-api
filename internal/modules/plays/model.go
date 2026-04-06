@@ -77,6 +77,19 @@ type CreateSubmissionRequest struct {
 	AvailabilityStatus *string `json:"availabilityStatus"`
 }
 
+type CreateSubmissionMediaUploadRequest struct {
+	Kind          string `json:"kind"`
+	ContentType   string `json:"contentType"`
+	ContentLength int64  `json:"contentLength"`
+}
+
+type AttachSubmissionMediaRequest struct {
+	Kind      string  `json:"kind"`
+	ObjectKey string  `json:"objectKey"`
+	AltText   *string `json:"altText"`
+	SortOrder *int    `json:"sortOrder"`
+}
+
 type UpdateSubmissionRequest struct {
 	Title              *string `json:"title"`
 	Synopsis           *string `json:"synopsis"`
@@ -134,10 +147,16 @@ type PlayCastMemberData struct {
 }
 
 type PlayMediaData struct {
+	ID        string  `json:"id"`
 	Kind      string  `json:"kind"`
 	URL       string  `json:"url"`
 	AltText   *string `json:"altText"`
 	SortOrder int     `json:"sortOrder"`
+}
+
+type CreateSubmissionMediaUploadData struct {
+	ObjectKey string `json:"objectKey"`
+	UploadURL string `json:"uploadUrl"`
 }
 
 type PlayDetailsData struct {
@@ -271,7 +290,7 @@ type PlayListRecord struct {
 	City               *string
 	AvailabilityStatus string
 	PublishedAt        time.Time
-	PosterURL          *string
+	PosterMediaID      *string
 	AverageRating      *float64
 	ReviewCount        int64
 	TrendScore         int64
@@ -284,7 +303,7 @@ type EngagementPlayRecord struct {
 	City               *string
 	AvailabilityStatus string
 	PublishedAt        time.Time
-	PosterURL          *string
+	PosterMediaID      *string
 	AverageRating      *float64
 	ReviewCount        int64
 	EngagedAt          time.Time
@@ -316,8 +335,9 @@ type PlayCastRecord struct {
 }
 
 type PlayMediaRecord struct {
+	ID        string
 	Kind      string
-	URL       string
+	ObjectKey string
 	AltText   *string
 	SortOrder int
 }
@@ -342,7 +362,7 @@ type UserReviewRecord struct {
 	City               *string
 	AvailabilityStatus string
 	PublishedAt        time.Time
-	PosterURL          *string
+	PosterMediaID      *string
 	Rating             int
 	Title              *string
 	Body               string
@@ -393,6 +413,15 @@ type CreateSubmissionParams struct {
 	AvailabilityStatus string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type CreatePlayMediaParams struct {
+	PlayID    string
+	Kind      string
+	ObjectKey string
+	AltText   *string
+	SortOrder int
+	CreatedAt time.Time
 }
 
 type UpdateSubmissionParams struct {

@@ -79,7 +79,7 @@ INSERT INTO app.play_media (
   id,
   play_id,
   kind,
-  url,
+  object_key,
   alt_text,
   sort_order,
   created_at
@@ -89,7 +89,7 @@ VALUES
     '00000000-0000-0000-0000-000000000401',
     '00000000-0000-0000-0000-000000000201',
     'poster',
-    'https://cdn.butaqueando.local/plays/hamlet-habana/poster.jpg',
+    'plays/00000000-0000-0000-0000-000000000201/poster.jpg',
     'Poster oficial de Hamlet en la Habana',
     0,
     now() - interval '30 days'
@@ -98,7 +98,7 @@ VALUES
     '00000000-0000-0000-0000-000000000402',
     '00000000-0000-0000-0000-000000000201',
     'photo',
-    'https://cdn.butaqueando.local/plays/hamlet-habana/scene-01.jpg',
+    'plays/00000000-0000-0000-0000-000000000201/scene-01.jpg',
     'Escena principal de Hamlet en la Habana',
     1,
     now() - interval '25 days'
@@ -107,7 +107,7 @@ VALUES
     '00000000-0000-0000-0000-000000000403',
     '00000000-0000-0000-0000-000000000202',
     'poster',
-    'https://cdn.butaqueando.local/plays/bernarda-alba/poster.jpg',
+    'plays/00000000-0000-0000-0000-000000000202/poster.jpg',
     'Poster oficial de La Casa de Bernarda Alba',
     0,
     now() - interval '220 days'
@@ -116,7 +116,7 @@ VALUES
     '00000000-0000-0000-0000-000000000404',
     '00000000-0000-0000-0000-000000000203',
     'poster',
-    'https://cdn.butaqueando.local/plays/principito-musical/poster.jpg',
+    'plays/00000000-0000-0000-0000-000000000203/poster.jpg',
     'Poster oficial de El Principito Musical',
     0,
     now() - interval '20 days'
@@ -125,7 +125,7 @@ VALUES
     '00000000-0000-0000-0000-000000000405',
     '00000000-0000-0000-0000-000000000204',
     'poster',
-    'https://cdn.butaqueando.local/plays/bodas-de-sangre/poster.jpg',
+    'plays/00000000-0000-0000-0000-000000000204/poster.jpg',
     'Poster oficial de Bodas de Sangre',
     0,
     now() - interval '14 days'
@@ -134,10 +134,10 @@ VALUES
     '00000000-0000-0000-0000-000000000406',
     '00000000-0000-0000-0000-000000000205',
     'poster',
-    'https://cdn.butaqueando.local/plays/horizonte-roto/poster.jpg',
+    'plays/00000000-0000-0000-0000-000000000205/poster.jpg',
     'Poster enviado por la comunidad para Horizonte Roto',
     0,
     now() - interval '4 days'
   )
-ON CONFLICT (play_id, url)
+ON CONFLICT (play_id, object_key)
 DO NOTHING;

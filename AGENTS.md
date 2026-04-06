@@ -37,8 +37,8 @@ If instructions conflict, prefer:
 - `internal/config/`: environment and config loading.
 - `internal/database/`: DB connection and migration wiring.
 - `internal/http/`: Gin router and middleware.
-- `internal/modules/`: feature modules (`health`, `users`, `plays`, `follows`, `auth`).
-- `internal/shared/`: shared errors, response helpers, pagination.
+- `internal/modules/`: feature modules (`health`, `users`, `plays`, `follows`, `auth`, `media`).
+- `internal/shared/`: shared errors, response helpers, pagination, storage clients.
 - `db/`: SQL schema, migrations, and smoke tests.
 
 ## Working Rules

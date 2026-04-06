@@ -18,6 +18,11 @@ type Config struct {
 	DBMaxOpenConns              int
 	DBMaxIdleConns              int
 	DBConnMaxLifetime           time.Duration
+	S3UploadURLTTL              time.Duration
+	S3DownloadURLTTL            time.Duration
+	S3MaxImageBytes             int64
+	PlaysS3                     S3BucketConfig
+	UsersS3                     S3BucketConfig
 	JWTIssuer                   string
 	JWTAccessSecret             string
 	JWTRefreshSecret            string
@@ -31,6 +36,14 @@ type Config struct {
 	ResendTemplatePasswordReset string
 	EmailVerificationRedirect   string
 	PasswordResetRedirect       string
+}
+
+type S3BucketConfig struct {
+	Endpoint        string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
 }
 
 func Load() (Config, error) {
@@ -60,6 +73,37 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	s3UploadURLTTL, err := durationFromEnvStrict("S3_UPLOAD_URL_TTL", 15*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+
+	s3DownloadURLTTL, err := durationFromEnvStrict("S3_DOWNLOAD_URL_TTL", 15*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+
+	s3MaxImageBytes, err := int64FromEnvStrict("S3_MAX_IMAGE_BYTES", 10*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+
+	playsS3 := S3BucketConfig{
+		Endpoint:        strings.TrimSpace(os.Getenv("PLAYS_S3_ENDPOINT")),
+		Region:          strings.TrimSpace(os.Getenv("PLAYS_S3_REGION")),
+		AccessKeyID:     strings.TrimSpace(os.Getenv("PLAYS_S3_ACCESS_KEY_ID")),
+		SecretAccessKey: strings.TrimSpace(os.Getenv("PLAYS_S3_SECRET_ACCESS_KEY")),
+		Bucket:          strings.TrimSpace(os.Getenv("PLAYS_S3_BUCKET")),
+	}
+
+	usersS3 := S3BucketConfig{
+		Endpoint:        strings.TrimSpace(os.Getenv("USERS_S3_ENDPOINT")),
+		Region:          strings.TrimSpace(os.Getenv("USERS_S3_REGION")),
+		AccessKeyID:     strings.TrimSpace(os.Getenv("USERS_S3_ACCESS_KEY_ID")),
+		SecretAccessKey: strings.TrimSpace(os.Getenv("USERS_S3_SECRET_ACCESS_KEY")),
+		Bucket:          strings.TrimSpace(os.Getenv("USERS_S3_BUCKET")),
+	}
+
 	cfg := Config{
 		AppEnv:                      resolvedAppEnv,
 		Port:                        envOrDefault("PORT", "3000"),
@@ -67,6 +111,11 @@ func Load() (Config, error) {
 		DBMaxOpenConns:              intFromEnv("DB_MAX_OPEN_CONNS", 20),
 		DBMaxIdleConns:              intFromEnv("DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetime:           durationFromEnv("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+		S3UploadURLTTL:              s3UploadURLTTL,
+		S3DownloadURLTTL:            s3DownloadURLTTL,
+		S3MaxImageBytes:             s3MaxImageBytes,
+		PlaysS3:                     playsS3,
+		UsersS3:                     usersS3,
 		JWTIssuer:                   envOrDefault("JWT_ISSUER", "butaqueando-api"),
 		JWTAccessSecret:             os.Getenv("JWT_ACCESS_SECRET"),
 		JWTRefreshSecret:            os.Getenv("JWT_REFRESH_SECRET"),
@@ -116,6 +165,26 @@ func Load() (Config, error) {
 
 	if cfg.PasswordResetTokenTTL <= 0 {
 		return Config{}, fmt.Errorf("PASSWORD_RESET_TOKEN_TTL must be greater than 0")
+	}
+
+	if cfg.S3UploadURLTTL <= 0 {
+		return Config{}, fmt.Errorf("S3_UPLOAD_URL_TTL must be greater than 0")
+	}
+
+	if cfg.S3DownloadURLTTL <= 0 {
+		return Config{}, fmt.Errorf("S3_DOWNLOAD_URL_TTL must be greater than 0")
+	}
+
+	if cfg.S3MaxImageBytes <= 0 {
+		return Config{}, fmt.Errorf("S3_MAX_IMAGE_BYTES must be greater than 0")
+	}
+
+	if err := validateS3BucketConfig(cfg.PlaysS3, "PLAYS"); err != nil {
+		return Config{}, err
+	}
+
+	if err := validateS3BucketConfig(cfg.UsersS3, "USERS"); err != nil {
+		return Config{}, err
 	}
 
 	if cfg.AppEnv == "production" && cfg.EmailVerificationRequired {
@@ -198,6 +267,44 @@ func boolFromEnvStrict(key string, fallback bool) (bool, error) {
 	}
 
 	return parsed, nil
+}
+
+func int64FromEnvStrict(key string, fallback int64) (int64, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid integer: %w", key, err)
+	}
+
+	return parsed, nil
+}
+
+func validateS3BucketConfig(cfg S3BucketConfig, prefix string) error {
+	if cfg.Endpoint == "" {
+		return fmt.Errorf("%s_S3_ENDPOINT is required", prefix)
+	}
+
+	if cfg.Region == "" {
+		return fmt.Errorf("%s_S3_REGION is required", prefix)
+	}
+
+	if cfg.AccessKeyID == "" {
+		return fmt.Errorf("%s_S3_ACCESS_KEY_ID is required", prefix)
+	}
+
+	if cfg.SecretAccessKey == "" {
+		return fmt.Errorf("%s_S3_SECRET_ACCESS_KEY is required", prefix)
+	}
+
+	if cfg.Bucket == "" {
+		return fmt.Errorf("%s_S3_BUCKET is required", prefix)
+	}
+
+	return nil
 }
 
 func normalizeEnv(value string) string {

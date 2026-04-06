@@ -3,19 +3,24 @@ package plays
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
 const (
-	defaultListLimit = 20
-	maxListLimit     = 50
+	defaultListLimit       = 20
+	maxListLimit           = 50
+	defaultUploadURLTTL    = 15 * time.Minute
+	defaultMaxImageBytes   = 10 * 1024 * 1024
+	defaultPlayMediaPrefix = "/v1/media/plays"
 )
 
 type repositoryPort interface {
@@ -41,6 +46,7 @@ type repositoryPort interface {
 	ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	ApproveSubmission(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	RejectSubmission(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
+	CreatePlayMedia(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error)
 	SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error
 	DeleteEngagement(ctx context.Context, userID string, playID string, kind string) error
 	GetEngagementState(ctx context.Context, userID string, playID string) (EngagementStateRecord, error)
@@ -48,11 +54,71 @@ type repositoryPort interface {
 }
 
 type Service struct {
-	repo repositoryPort
+	repo             repositoryPort
+	mediaStorage     storage.Client
+	mediaUploadTTL   time.Duration
+	maxImageBytes    int64
+	playMediaBaseURL string
 }
 
-func NewService(repo repositoryPort) *Service {
-	return &Service{repo: repo}
+type ServiceOption func(*Service)
+
+func WithMediaStorage(mediaStorage storage.Client) ServiceOption {
+	return func(s *Service) {
+		s.mediaStorage = mediaStorage
+	}
+}
+
+func WithMediaUploadTTL(ttl time.Duration) ServiceOption {
+	return func(s *Service) {
+		s.mediaUploadTTL = ttl
+	}
+}
+
+func WithMaxImageBytes(maxBytes int64) ServiceOption {
+	return func(s *Service) {
+		s.maxImageBytes = maxBytes
+	}
+}
+
+func WithPlayMediaBaseURL(baseURL string) ServiceOption {
+	return func(s *Service) {
+		s.playMediaBaseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
+	}
+}
+
+func NewService(repo repositoryPort, options ...ServiceOption) *Service {
+	service := &Service{
+		repo:             repo,
+		mediaStorage:     storage.NoopClient{},
+		mediaUploadTTL:   defaultUploadURLTTL,
+		maxImageBytes:    defaultMaxImageBytes,
+		playMediaBaseURL: defaultPlayMediaPrefix,
+	}
+
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+
+	if service.mediaStorage == nil {
+		service.mediaStorage = storage.NoopClient{}
+	}
+
+	if service.mediaUploadTTL <= 0 {
+		service.mediaUploadTTL = defaultUploadURLTTL
+	}
+
+	if service.maxImageBytes <= 0 {
+		service.maxImageBytes = defaultMaxImageBytes
+	}
+
+	if strings.TrimSpace(service.playMediaBaseURL) == "" {
+		service.playMediaBaseURL = defaultPlayMediaPrefix
+	}
+
+	return service
 }
 
 func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
@@ -112,7 +178,7 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 		return FeedData{}, sharederrors.Internal("failed to load feed", nil)
 	}
 
-	return buildFeedData(records, limit, section)
+	return buildFeedData(records, limit, section, s.playMediaBaseURL)
 }
 
 func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, error) {
@@ -175,7 +241,7 @@ func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, er
 		return SearchData{}, sharederrors.Internal("failed to search plays", nil)
 	}
 
-	data, err := buildPlayListData(records, limit)
+	data, err := buildPlayListData(records, limit, s.playMediaBaseURL)
 	if err != nil {
 		return SearchData{}, err
 	}
@@ -212,7 +278,7 @@ func (s *Service) GetByID(ctx context.Context, playID string) (PlayDetailsData, 
 		return PlayDetailsData{}, sharederrors.Internal("failed to load play", nil)
 	}
 
-	return mapPlayDetails(play, genres, cast, media), nil
+	return mapPlayDetails(play, genres, cast, media, s.playMediaBaseURL), nil
 }
 
 func (s *Service) ListReviews(ctx context.Context, playID string, query ListReviewsQuery) (ReviewListData, error) {
@@ -503,6 +569,150 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 	}
 
 	return mapSubmissionRecord(record), nil
+}
+
+func (s *Service) CreateSubmissionMediaUpload(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+	if !isValidAuthUserID(userID) {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if !isValidUUID(playID) {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	if _, err := normalizePlayMediaKind(req.Kind); err != nil {
+		return CreateSubmissionMediaUploadData{}, err
+	}
+
+	contentType, extension, err := normalizeImageContentType(req.ContentType)
+	if err != nil {
+		return CreateSubmissionMediaUploadData{}, err
+	}
+
+	if req.ContentLength <= 0 {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("contentLength must be greater than 0", nil)
+	}
+
+	if req.ContentLength > s.maxImageBytes {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("contentLength exceeds max allowed size", nil)
+	}
+
+	current, err := s.repo.GetSubmissionByID(ctx, playID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return CreateSubmissionMediaUploadData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return CreateSubmissionMediaUploadData{}, sharederrors.Internal("failed to create media upload", nil)
+	}
+
+	if !sameUUID(current.CreatedByUserID, userID) {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Forbidden("you can only edit your own submissions", nil)
+	}
+
+	if current.CurationStatus != "pending" && current.CurationStatus != "rejected" {
+		return CreateSubmissionMediaUploadData{}, invalidTransitionError(current.CurationStatus, "pending")
+	}
+
+	objectKey := fmt.Sprintf("plays/%s/%s.%s", playID, uuid.NewString(), extension)
+	contentLength := req.ContentLength
+	uploadURL, err := s.mediaStorage.PresignPutObject(ctx, storage.PresignPutObjectInput{
+		ObjectKey:     objectKey,
+		ContentType:   contentType,
+		ContentLength: &contentLength,
+		ExpiresIn:     s.mediaUploadTTL,
+	})
+	if err != nil {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Internal("failed to create media upload", nil)
+	}
+
+	return CreateSubmissionMediaUploadData{ObjectKey: objectKey, UploadURL: uploadURL}, nil
+}
+
+func (s *Service) AttachSubmissionMedia(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+	if !isValidAuthUserID(userID) {
+		return PlayMediaData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if !isValidUUID(playID) {
+		return PlayMediaData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	kind, err := normalizePlayMediaKind(req.Kind)
+	if err != nil {
+		return PlayMediaData{}, err
+	}
+
+	objectKey := strings.TrimSpace(req.ObjectKey)
+	if objectKey == "" {
+		return PlayMediaData{}, sharederrors.Validation("objectKey must not be empty", nil)
+	}
+
+	if !strings.HasPrefix(objectKey, "plays/"+playID+"/") {
+		return PlayMediaData{}, sharederrors.Validation("objectKey does not belong to this play", nil)
+	}
+
+	sortOrder := 0
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+		if sortOrder < 0 {
+			return PlayMediaData{}, sharederrors.Validation("sortOrder must be greater than or equal to 0", nil)
+		}
+	}
+
+	altText := normalizeOptionalText(req.AltText)
+
+	current, err := s.repo.GetSubmissionByID(ctx, playID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return PlayMediaData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	if !sameUUID(current.CreatedByUserID, userID) {
+		return PlayMediaData{}, sharederrors.Forbidden("you can only edit your own submissions", nil)
+	}
+
+	if current.CurationStatus != "pending" && current.CurationStatus != "rejected" {
+		return PlayMediaData{}, invalidTransitionError(current.CurationStatus, "pending")
+	}
+
+	headObject, err := s.mediaStorage.HeadObject(ctx, storage.HeadObjectInput{ObjectKey: objectKey})
+	if err != nil {
+		if storage.IsNotFoundError(err) {
+			return PlayMediaData{}, sharederrors.Validation("uploaded object was not found", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	if _, _, err := normalizeImageContentType(headObject.ContentType); err != nil {
+		return PlayMediaData{}, err
+	}
+
+	if headObject.ContentLength <= 0 || headObject.ContentLength > s.maxImageBytes {
+		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
+	}
+
+	record, err := s.repo.CreatePlayMedia(ctx, CreatePlayMediaParams{
+		PlayID:    playID,
+		Kind:      kind,
+		ObjectKey: objectKey,
+		AltText:   altText,
+		SortOrder: sortOrder,
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		if isDuplicatedKeyError(err) {
+			return PlayMediaData{}, sharederrors.New(http.StatusConflict, "PLAY_MEDIA_ALREADY_EXISTS", "play media already exists", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	return mapPlayMediaRecord(playID, record, s.playMediaBaseURL), nil
 }
 
 func (s *Service) ListMySubmissions(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error) {
@@ -803,7 +1013,7 @@ func (s *Service) DeleteEngagement(ctx context.Context, userID string, playID st
 	return s.loadEngagementState(ctx, userID, playID)
 }
 
-func buildPlayListData(records []PlayListRecord, limit int) (FeedData, error) {
+func buildPlayListData(records []PlayListRecord, limit int, playMediaBaseURL string) (FeedData, error) {
 	hasNext := len(records) > limit
 	if hasNext {
 		records = records[:limit]
@@ -818,7 +1028,7 @@ func buildPlayListData(records []PlayListRecord, limit int) (FeedData, error) {
 			City:               record.City,
 			AvailabilityStatus: record.AvailabilityStatus,
 			PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
-			PosterURL:          record.PosterURL,
+			PosterURL:          buildPosterURL(playMediaBaseURL, record.ID, record.PosterMediaID),
 			AverageRating:      record.AverageRating,
 			ReviewCount:        record.ReviewCount,
 		})
@@ -838,7 +1048,7 @@ func buildPlayListData(records []PlayListRecord, limit int) (FeedData, error) {
 	return response, nil
 }
 
-func buildFeedData(records []PlayListRecord, limit int, section string) (FeedData, error) {
+func buildFeedData(records []PlayListRecord, limit int, section string, playMediaBaseURL string) (FeedData, error) {
 	hasNext := len(records) > limit
 	if hasNext {
 		records = records[:limit]
@@ -853,7 +1063,7 @@ func buildFeedData(records []PlayListRecord, limit int, section string) (FeedDat
 			City:               record.City,
 			AvailabilityStatus: record.AvailabilityStatus,
 			PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
-			PosterURL:          record.PosterURL,
+			PosterURL:          buildPosterURL(playMediaBaseURL, record.ID, record.PosterMediaID),
 			AverageRating:      record.AverageRating,
 			ReviewCount:        record.ReviewCount,
 		})
@@ -909,7 +1119,7 @@ func buildReviewListData(records []ReviewRecord, limit int) (ReviewListData, err
 	return response, nil
 }
 
-func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []PlayCastRecord, media []PlayMediaRecord) PlayDetailsData {
+func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []PlayCastRecord, media []PlayMediaRecord, playMediaBaseURL string) PlayDetailsData {
 	genreItems := make([]PlayGenreData, 0, len(genres))
 	for _, genre := range genres {
 		genreItems = append(genreItems, PlayGenreData{ID: genre.ID, Name: genre.Name})
@@ -927,8 +1137,9 @@ func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []Pla
 	mediaItems := make([]PlayMediaData, 0, len(media))
 	for _, item := range media {
 		mediaItems = append(mediaItems, PlayMediaData{
+			ID:        item.ID,
 			Kind:      item.Kind,
-			URL:       item.URL,
+			URL:       buildPlayMediaURL(playMediaBaseURL, play.ID, item.ID),
 			AltText:   item.AltText,
 			SortOrder: item.SortOrder,
 		})
@@ -1035,7 +1246,7 @@ func buildSubmissionListData(records []SubmissionRecord, limit int) (SubmissionL
 	return response, nil
 }
 
-func buildMyEngagementPlayListData(records []EngagementPlayRecord, limit int) (MyEngagementPlayListData, error) {
+func buildMyEngagementPlayListData(records []EngagementPlayRecord, limit int, playMediaBaseURL string) (MyEngagementPlayListData, error) {
 	hasNext := len(records) > limit
 	if hasNext {
 		records = records[:limit]
@@ -1050,7 +1261,7 @@ func buildMyEngagementPlayListData(records []EngagementPlayRecord, limit int) (M
 			City:               record.City,
 			AvailabilityStatus: record.AvailabilityStatus,
 			PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
-			PosterURL:          record.PosterURL,
+			PosterURL:          buildPosterURL(playMediaBaseURL, record.ID, record.PosterMediaID),
 			AverageRating:      record.AverageRating,
 			ReviewCount:        record.ReviewCount,
 			EngagedAt:          record.EngagedAt.UTC().Format(time.RFC3339Nano),
@@ -1071,7 +1282,7 @@ func buildMyEngagementPlayListData(records []EngagementPlayRecord, limit int) (M
 	return response, nil
 }
 
-func buildUserReviewListData(records []UserReviewRecord, limit int) (UserReviewListData, error) {
+func buildUserReviewListData(records []UserReviewRecord, limit int, playMediaBaseURL string) (UserReviewListData, error) {
 	hasNext := len(records) > limit
 	if hasNext {
 		records = records[:limit]
@@ -1088,7 +1299,7 @@ func buildUserReviewListData(records []UserReviewRecord, limit int) (UserReviewL
 				City:               record.City,
 				AvailabilityStatus: record.AvailabilityStatus,
 				PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
-				PosterURL:          record.PosterURL,
+				PosterURL:          buildPosterURL(playMediaBaseURL, record.PlayID, record.PosterMediaID),
 			},
 			Rating:           record.Rating,
 			Title:            record.Title,
@@ -1122,6 +1333,39 @@ func formatTimePointer(raw *time.Time) *string {
 	return &formatted
 }
 
+func mapPlayMediaRecord(playID string, record PlayMediaRecord, playMediaBaseURL string) PlayMediaData {
+	return PlayMediaData{
+		ID:        record.ID,
+		Kind:      record.Kind,
+		URL:       buildPlayMediaURL(playMediaBaseURL, playID, record.ID),
+		AltText:   record.AltText,
+		SortOrder: record.SortOrder,
+	}
+}
+
+func buildPosterURL(baseURL string, playID string, mediaID *string) *string {
+	if mediaID == nil {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(*mediaID)
+	if trimmed == "" {
+		return nil
+	}
+
+	url := buildPlayMediaURL(baseURL, playID, trimmed)
+	return &url
+}
+
+func buildPlayMediaURL(baseURL string, playID string, mediaID string) string {
+	base := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = defaultPlayMediaPrefix
+	}
+
+	return base + "/" + strings.TrimSpace(playID) + "/" + strings.TrimSpace(mediaID)
+}
+
 func normalizeOptionalText(raw *string) *string {
 	if raw == nil {
 		return nil
@@ -1142,6 +1386,38 @@ func requiredSubmissionText(raw string, field string) (string, error) {
 	}
 
 	return trimmed, nil
+}
+
+func normalizePlayMediaKind(raw string) (string, error) {
+	kind := strings.ToLower(strings.TrimSpace(raw))
+	if kind != "poster" && kind != "photo" {
+		return "", sharederrors.Validation("kind must be one of: poster, photo", nil)
+	}
+
+	return kind, nil
+}
+
+func normalizeImageContentType(raw string) (string, string, error) {
+	contentType := strings.ToLower(strings.TrimSpace(raw))
+	if contentType == "" {
+		return "", "", sharederrors.Validation("contentType must not be empty", nil)
+	}
+
+	if strings.Contains(contentType, ";") {
+		parts := strings.SplitN(contentType, ";", 2)
+		contentType = strings.TrimSpace(parts[0])
+	}
+
+	switch contentType {
+	case "image/jpeg":
+		return contentType, "jpg", nil
+	case "image/png":
+		return contentType, "png", nil
+	case "image/webp":
+		return contentType, "webp", nil
+	default:
+		return "", "", sharederrors.Validation("contentType must be one of: image/jpeg, image/png, image/webp", nil)
+	}
 }
 
 func normalizeAvailabilityStatus(raw *string) (string, error) {
@@ -1288,7 +1564,7 @@ func (s *Service) listEngagementPlays(ctx context.Context, userID string, query 
 		return MyEngagementPlayListData{}, sharederrors.Internal(loadErrorMessage, nil)
 	}
 
-	return buildMyEngagementPlayListData(records, limit)
+	return buildMyEngagementPlayListData(records, limit, s.playMediaBaseURL)
 }
 
 func (s *Service) listUserReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error) {
@@ -1307,7 +1583,7 @@ func (s *Service) listUserReviews(ctx context.Context, userID string, query List
 		return UserReviewListData{}, sharederrors.Internal("failed to load reviews", nil)
 	}
 
-	return buildUserReviewListData(records, limit)
+	return buildUserReviewListData(records, limit, s.playMediaBaseURL)
 }
 
 func (s *Service) ensureUserExists(ctx context.Context, userID string) error {

@@ -14,27 +14,29 @@ import (
 )
 
 type fakeService struct {
-	feedFn          func(ctx context.Context, query FeedQuery) (FeedData, error)
-	searchFn        func(ctx context.Context, query SearchQuery) (SearchData, error)
-	getByID         func(ctx context.Context, playID string) (PlayDetailsData, error)
-	listReviewsFn   func(ctx context.Context, playID string, query ListReviewsQuery) (ReviewListData, error)
-	createReviewFn  func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
-	updateReviewFn  func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
-	createCommentFn func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
-	updateCommentFn func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
-	listUserWatchFn func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listUserRevFn   func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
-	createSubFn     func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
-	listMyBooksFn   func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listMyWatchFn   func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listMyRevFn     func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
-	listMySubsFn    func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
-	updateMySubFn   func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
-	listAdminSubsFn func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
-	approveSubFn    func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
-	rejectSubFn     func(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
-	setEngagementFn func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
-	deleteEngageFn  func(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
+	feedFn                 func(ctx context.Context, query FeedQuery) (FeedData, error)
+	searchFn               func(ctx context.Context, query SearchQuery) (SearchData, error)
+	getByID                func(ctx context.Context, playID string) (PlayDetailsData, error)
+	listReviewsFn          func(ctx context.Context, playID string, query ListReviewsQuery) (ReviewListData, error)
+	createReviewFn         func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
+	updateReviewFn         func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
+	createCommentFn        func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	updateCommentFn        func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
+	listUserWatchFn        func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listUserRevFn          func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
+	createSubFn            func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
+	createSubMediaUploadFn func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	attachSubMediaFn       func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
+	listMyBooksFn          func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyWatchFn          func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyRevFn            func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
+	listMySubsFn           func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
+	updateMySubFn          func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	listAdminSubsFn        func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
+	approveSubFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
+	rejectSubFn            func(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
+	setEngagementFn        func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
+	deleteEngageFn         func(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
 }
 
 func (f *fakeService) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
@@ -123,6 +125,22 @@ func (f *fakeService) CreateSubmission(ctx context.Context, userID string, req C
 	}
 
 	return SubmissionData{}, nil
+}
+
+func (f *fakeService) CreateSubmissionMediaUpload(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+	if f.createSubMediaUploadFn != nil {
+		return f.createSubMediaUploadFn(ctx, userID, playID, req)
+	}
+
+	return CreateSubmissionMediaUploadData{}, nil
+}
+
+func (f *fakeService) AttachSubmissionMedia(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+	if f.attachSubMediaFn != nil {
+		return f.attachSubMediaFn(ctx, userID, playID, req)
+	}
+
+	return PlayMediaData{}, nil
 }
 
 func (f *fakeService) ListMyBookmarks(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
@@ -640,5 +658,53 @@ func TestHandlerApproveSubmissionRequiresAuth(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerCreateSubmissionMediaUploadSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{createSubMediaUploadFn: func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+		return CreateSubmissionMediaUploadData{ObjectKey: "plays/" + playID + "/1.jpg", UploadURL: "https://upload.example.com"}, nil
+	}})
+	router.POST("/v1/me/submissions/plays/:playId/media/uploads", handler.CreateSubmissionMediaUpload)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/me/submissions/plays/00000000-0000-0000-0000-000000000201/media/uploads", strings.NewReader(`{"kind":"poster","contentType":"image/jpeg","contentLength":123}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerAttachSubmissionMediaSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{attachSubMediaFn: func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+		return PlayMediaData{ID: "00000000-0000-0000-0000-000000000401", Kind: req.Kind, URL: "/v1/media/plays/" + playID + "/00000000-0000-0000-0000-000000000401", SortOrder: 0}, nil
+	}})
+	router.POST("/v1/me/submissions/plays/:playId/media", handler.AttachSubmissionMedia)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/me/submissions/plays/00000000-0000-0000-0000-000000000201/media", strings.NewReader(`{"kind":"poster","objectKey":"plays/00000000-0000-0000-0000-000000000201/1.jpg"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
 	}
 }

@@ -33,6 +33,7 @@ type fakeRepository struct {
 	listAdminSubmissionsFn func(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	approveSubmissionFn    func(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	rejectSubmissionFn     func(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
+	createPlayMediaFn      func(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error)
 	setEngagementFn        func(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error
 	deleteEngagementFn     func(ctx context.Context, userID string, playID string, kind string) error
 	engagementStateFn      func(ctx context.Context, userID string, playID string) (EngagementStateRecord, error)
@@ -213,6 +214,14 @@ func (f *fakeRepository) RejectSubmission(ctx context.Context, playID string, ad
 	}
 
 	return SubmissionRecord{}, nil
+}
+
+func (f *fakeRepository) CreatePlayMedia(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error) {
+	if f.createPlayMediaFn != nil {
+		return f.createPlayMediaFn(ctx, params)
+	}
+
+	return PlayMediaRecord{}, nil
 }
 
 func (f *fakeRepository) SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error {
@@ -531,7 +540,7 @@ func TestServiceGetByIDSuccess(t *testing.T) {
 			return []PlayCastRecord{{PersonName: "Luis", RoleName: "Hamlet", BillingOrder: 1}}, nil
 		},
 		listPlayMediaFn: func(ctx context.Context, playID string) ([]PlayMediaRecord, error) {
-			return []PlayMediaRecord{{Kind: "poster", URL: "https://cdn/poster.jpg", SortOrder: 0}}, nil
+			return []PlayMediaRecord{{ID: "00000000-0000-0000-0000-000000000401", Kind: "poster", ObjectKey: "plays/00000000-0000-0000-0000-000000000201/poster.jpg", SortOrder: 0}}, nil
 		},
 	})
 

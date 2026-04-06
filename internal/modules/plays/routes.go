@@ -1,7 +1,10 @@
 package plays
 
 import (
+	"time"
+
 	"github.com/butaqueando/api/internal/http/middleware"
+	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -11,11 +14,19 @@ const BasePath = "/plays"
 type Dependencies struct {
 	DB                *gorm.DB
 	AccessTokenParser middleware.AccessTokenParser
+	MediaStorage      storage.Client
+	UploadURLTTL      time.Duration
+	MaxImageBytes     int64
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	repo := NewRepository(deps.DB)
-	service := NewService(repo)
+	service := NewService(
+		repo,
+		WithMediaStorage(deps.MediaStorage),
+		WithMediaUploadTTL(deps.UploadURLTTL),
+		WithMaxImageBytes(deps.MaxImageBytes),
+	)
 	handler := NewHandler(service)
 
 	v1.GET("/feed", handler.Feed)
@@ -53,6 +64,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	mySubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	mySubmissions.GET("/plays", handler.ListMySubmissions)
 	mySubmissions.PATCH("/plays/:playId", handler.UpdateMySubmission)
+	mySubmissions.POST("/plays/:playId/media/uploads", handler.CreateSubmissionMediaUpload)
+	mySubmissions.POST("/plays/:playId/media", handler.AttachSubmissionMedia)
 
 	adminSubmissions := v1.Group("/admin/submissions")
 	adminSubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

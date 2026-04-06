@@ -14,9 +14,10 @@ import (
 )
 
 type fakeService struct {
-	getPublicProfileFn func(ctx context.Context, userID string) (PublicProfileData, error)
-	getMeProfileFn     func(ctx context.Context, userID string) (MeProfileData, error)
-	updateMeProfileFn  func(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
+	getPublicProfileFn   func(ctx context.Context, userID string) (PublicProfileData, error)
+	getMeProfileFn       func(ctx context.Context, userID string) (MeProfileData, error)
+	updateMeProfileFn    func(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
+	createAvatarUploadFn func(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error)
 }
 
 func (f *fakeService) GetPublicProfile(ctx context.Context, userID string) (PublicProfileData, error) {
@@ -41,6 +42,14 @@ func (f *fakeService) UpdateMeProfile(ctx context.Context, userID string, req Up
 	}
 
 	return MeProfileData{}, nil
+}
+
+func (f *fakeService) CreateAvatarUpload(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error) {
+	if f.createAvatarUploadFn != nil {
+		return f.createAvatarUploadFn(ctx, userID, req)
+	}
+
+	return CreateAvatarUploadData{}, nil
 }
 
 func TestHandlerGetMeUnauthorizedWithoutToken(t *testing.T) {
@@ -190,5 +199,29 @@ func TestHandlerGetProfileReturnsNotModifiedWhenETagMatches(t *testing.T) {
 
 	if secondRecorder.Code != http.StatusNotModified {
 		t.Fatalf("expected status %d, got %d", http.StatusNotModified, secondRecorder.Code)
+	}
+}
+
+func TestHandlerCreateAvatarUploadSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{createAvatarUploadFn: func(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error) {
+		return CreateAvatarUploadData{ObjectKey: "users/00000000-0000-0000-0000-000000000002/avatar/1.jpg", UploadURL: "https://upload.example.com"}, nil
+	}})
+	router.POST("/v1/me/profile/avatar/uploads", handler.CreateAvatarUpload)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/me/profile/avatar/uploads", bytes.NewBufferString(`{"contentType":"image/jpeg","contentLength":1234}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
 	}
 }

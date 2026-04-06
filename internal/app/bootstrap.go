@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/butaqueando/api/internal/config"
@@ -8,6 +9,7 @@ import (
 	apihttp "github.com/butaqueando/api/internal/http"
 	authmodule "github.com/butaqueando/api/internal/modules/auth"
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
+	"github.com/butaqueando/api/internal/shared/storage"
 )
 
 func Bootstrap() (*Application, error) {
@@ -36,6 +38,28 @@ func Bootstrap() (*Application, error) {
 		verificationEmailSender = resendSender
 	}
 
+	playsStorage, err := storage.NewS3Client(context.Background(), storage.BucketConfig{
+		Endpoint:        cfg.PlaysS3.Endpoint,
+		Region:          cfg.PlaysS3.Region,
+		AccessKeyID:     cfg.PlaysS3.AccessKeyID,
+		SecretAccessKey: cfg.PlaysS3.SecretAccessKey,
+		Bucket:          cfg.PlaysS3.Bucket,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build plays storage client: %w", err)
+	}
+
+	usersStorage, err := storage.NewS3Client(context.Background(), storage.BucketConfig{
+		Endpoint:        cfg.UsersS3.Endpoint,
+		Region:          cfg.UsersS3.Region,
+		AccessKeyID:     cfg.UsersS3.AccessKeyID,
+		SecretAccessKey: cfg.UsersS3.SecretAccessKey,
+		Bucket:          cfg.UsersS3.Bucket,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build users storage client: %w", err)
+	}
+
 	router := apihttp.NewRouter(apihttp.Dependencies{
 		DB: db,
 		TokenConfig: authmodule.TokenConfig{
@@ -51,6 +75,11 @@ func Bootstrap() (*Application, error) {
 		EmailVerificationRedirect: cfg.EmailVerificationRedirect,
 		PasswordResetRedirect:     cfg.PasswordResetRedirect,
 		PasswordResetTokenTTL:     cfg.PasswordResetTokenTTL,
+		PlaysStorage:              playsStorage,
+		UsersStorage:              usersStorage,
+		S3UploadURLTTL:            cfg.S3UploadURLTTL,
+		S3DownloadURLTTL:          cfg.S3DownloadURLTTL,
+		S3MaxImageBytes:           cfg.S3MaxImageBytes,
 	})
 
 	return &Application{

@@ -98,6 +98,7 @@ Theater information and social opinion are fragmented. Users need one place to:
 
 - Return core metadata (title, synopsis, director, duration, theater, city, genres, cast, media).
 - Return aggregate stats (average rating, review count).
+- Media entries are exposed as stable API URLs that redirect to short-lived pre-signed bucket URLs.
 
 ### FR-05 Bookmark and Watched
 
@@ -122,6 +123,7 @@ Theater information and social opinion are fragmented. Users need one place to:
 
 - Public profile includes:
   - bio/basic data
+  - optional avatar URL
   - follower/following counters
 - Watched plays and ratings/reviews are provided through dedicated paginated profile endpoints:
   - `GET /v1/users/:userId/watched`
@@ -159,6 +161,15 @@ Theater information and social opinion are fragmented. Users need one place to:
 - Duplicate follow relations are not allowed.
 - Users can list their own followings with cursor pagination.
 
+### FR-14 Media Upload and Delivery
+
+- Buckets are private and S3-compatible (Railway Buckets).
+- Direct client uploads must use pre-signed `PUT` URLs issued by the API.
+- The API stores object keys (not public CDN URLs) as canonical media references.
+- Play submission media can only be attached by the creator of the submission while status is `pending` or `rejected`.
+- User avatar is optional and managed through `PATCH /v1/me/profile` using `avatarObjectKey`.
+- Public media consumption uses stable API routes that redirect to short-lived pre-signed `GET` URLs.
+
 ## 8) Curation State Model
 
 - `pending -> published`
@@ -176,6 +187,8 @@ Theater information and social opinion are fragmented. Users need one place to:
 - `GET /v1/users/:userId/profile`
 - `GET /v1/users/:userId/followers?cursor=&limit=`
 - `GET /v1/users/:userId/followings?cursor=&limit=`
+- `GET /v1/media/plays/:playId/:mediaId`
+- `GET /v1/media/users/:userId/avatar`
 
 ### User Mutations
 
@@ -187,7 +200,8 @@ Theater information and social opinion are fragmented. Users need one place to:
 - `POST /v1/users/:userId/follow`
 - `DELETE /v1/users/:userId/follow`
 - `GET /v1/me/profile`
-- `PATCH /v1/me/profile`
+- `PATCH /v1/me/profile` (supports optional `avatarObjectKey` updates)
+- `POST /v1/me/profile/avatar/uploads`
 - `GET /v1/me/followings?cursor=&limit=`
 
 ### Submission Flow (User)
@@ -195,6 +209,8 @@ Theater information and social opinion are fragmented. Users need one place to:
 - `POST /v1/submissions/plays`
 - `GET /v1/me/submissions/plays?status=`
 - `PATCH /v1/me/submissions/plays/:playId` (edit/resubmit pending or rejected)
+- `POST /v1/me/submissions/plays/:playId/media/uploads`
+- `POST /v1/me/submissions/plays/:playId/media`
 
 ### Admin Moderation
 
@@ -233,6 +249,8 @@ The current schema draft is aligned with MVP needs:
 - Self-follow is not allowed.
 - User email is unique.
 - Public visibility gated by `curation_status = published`.
+- Play media persistence stores `object_key`; uniqueness is `(play_id, object_key)`.
+- User avatar key is optional (`app.user_profiles.avatar_object_key` is nullable).
 
 ### Recommended Schema Additions
 
