@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -30,6 +31,9 @@ type fakeRepository struct {
 	listUserSubmissionsFn  func(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	getSubmissionByIDFn    func(ctx context.Context, playID string) (SubmissionRecord, error)
 	updateSubmissionFn     func(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
+	listGenresFn           func(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	createGenreFn          func(ctx context.Context, name string) (GenreRecord, error)
+	deleteGenreFn          func(ctx context.Context, genreID string) error
 	listAdminSubmissionsFn func(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	approveSubmissionFn    func(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	rejectSubmissionFn     func(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
@@ -190,6 +194,30 @@ func (f *fakeRepository) UpdateSubmission(ctx context.Context, playID string, pa
 	}
 
 	return SubmissionRecord{}, nil
+}
+
+func (f *fakeRepository) ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error) {
+	if f.listGenresFn != nil {
+		return f.listGenresFn(ctx, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) CreateGenre(ctx context.Context, name string) (GenreRecord, error) {
+	if f.createGenreFn != nil {
+		return f.createGenreFn(ctx, name)
+	}
+
+	return GenreRecord{}, nil
+}
+
+func (f *fakeRepository) DeleteGenre(ctx context.Context, genreID string) error {
+	if f.deleteGenreFn != nil {
+		return f.deleteGenreFn(ctx, genreID)
+	}
+
+	return nil
 }
 
 func (f *fakeRepository) ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error) {
@@ -1045,6 +1073,206 @@ func TestServiceListAdminSubmissionsRequiresAdmin(t *testing.T) {
 
 	if appErr.Code != "FORBIDDEN" {
 		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceListAdminGenresRequiresAdmin(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.ListAdminGenres(context.Background(), "00000000-0000-0000-0000-000000000001", "user", ListGenresQuery{})
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceCreateAdminGenreRequiresName(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.CreateAdminGenre(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", CreateGenreRequest{Name: "   "})
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceCreateAdminGenreDuplicate(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{createGenreFn: func(ctx context.Context, name string) (GenreRecord, error) {
+		return GenreRecord{}, &pgconn.PgError{Code: "23505"}
+	}})
+
+	_, err := service.CreateAdminGenre(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", CreateGenreRequest{Name: "Drama"})
+	if err == nil {
+		t.Fatalf("expected conflict error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "GENRE_ALREADY_EXISTS" {
+		t.Fatalf("expected GENRE_ALREADY_EXISTS, got %q", appErr.Code)
+	}
+}
+
+func TestServiceDeleteAdminGenreInUse(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{deleteGenreFn: func(ctx context.Context, genreID string) error {
+		return &pgconn.PgError{Code: "23503"}
+	}})
+
+	err := service.DeleteAdminGenre(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000101")
+	if err == nil {
+		t.Fatalf("expected conflict error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "GENRE_IN_USE" {
+		t.Fatalf("expected GENRE_IN_USE, got %q", appErr.Code)
+	}
+}
+
+func TestServiceDeleteAdminGenreNotFound(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{deleteGenreFn: func(ctx context.Context, genreID string) error {
+		return gorm.ErrRecordNotFound
+	}})
+
+	err := service.DeleteAdminGenre(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000101")
+	if err == nil {
+		t.Fatalf("expected not found error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND, got %q", appErr.Code)
+	}
+}
+
+func TestServiceGetAdminSubmissionByIDRequiresAdmin(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.GetAdminSubmissionByID(context.Background(), "00000000-0000-0000-0000-000000000001", "user", "00000000-0000-0000-0000-000000000901")
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceUpdateAdminSubmissionRequiresPendingStatus(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{getSubmissionByIDFn: func(ctx context.Context, playID string) (SubmissionRecord, error) {
+		return SubmissionRecord{ID: playID, CurationStatus: "rejected", CreatedByUserID: "00000000-0000-0000-0000-000000000002"}, nil
+	}})
+
+	title := "Updated"
+	_, err := service.UpdateAdminSubmission(
+		context.Background(),
+		"00000000-0000-0000-0000-000000000001",
+		"admin",
+		"00000000-0000-0000-0000-000000000901",
+		UpdateSubmissionRequest{Title: &title},
+	)
+	if err == nil {
+		t.Fatalf("expected conflict error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "INVALID_CURATION_TRANSITION" {
+		t.Fatalf("expected INVALID_CURATION_TRANSITION, got %q", appErr.Code)
+	}
+}
+
+func TestServiceUpdateAdminSubmissionSuccess(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{
+		getSubmissionByIDFn: func(ctx context.Context, playID string) (SubmissionRecord, error) {
+			return SubmissionRecord{ID: playID, CurationStatus: "pending", CreatedByUserID: "00000000-0000-0000-0000-000000000002"}, nil
+		},
+		updateSubmissionFn: func(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error) {
+			if params.Title == nil || *params.Title != "Updated" {
+				t.Fatalf("expected title patch to be applied")
+			}
+			if params.UpdatedAt.IsZero() {
+				t.Fatalf("expected updated_at to be set")
+			}
+
+			return SubmissionRecord{
+				ID:                 playID,
+				Title:              "Updated",
+				Synopsis:           "S",
+				Director:           "D",
+				DurationMinutes:    100,
+				TheaterName:        "T",
+				AvailabilityStatus: "in_theaters",
+				CurationStatus:     "pending",
+				CreatedByUserID:    "00000000-0000-0000-0000-000000000002",
+				CreatedAt:          time.Now().UTC(),
+				UpdatedAt:          time.Now().UTC(),
+			}, nil
+		},
+	})
+
+	title := "Updated"
+	data, err := service.UpdateAdminSubmission(
+		context.Background(),
+		"00000000-0000-0000-0000-000000000001",
+		"admin",
+		"00000000-0000-0000-0000-000000000901",
+		UpdateSubmissionRequest{Title: &title},
+	)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if data.Title != "Updated" {
+		t.Fatalf("expected updated title")
 	}
 }
 

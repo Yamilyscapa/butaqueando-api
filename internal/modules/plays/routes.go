@@ -75,8 +75,16 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminSubmissions := v1.Group("/admin/submissions")
 	adminSubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	adminSubmissions.GET("/plays", handler.ListAdminSubmissions)
+	adminSubmissions.GET("/plays/:playId", handler.GetAdminSubmissionByID)
+	adminSubmissions.PATCH("/plays/:playId", handler.UpdateAdminSubmission)
 	adminSubmissions.POST("/plays/:playId/approve", handler.ApproveSubmission)
 	adminSubmissions.POST("/plays/:playId/reject", handler.RejectSubmission)
+
+	adminGenres := v1.Group("/admin/genres")
+	adminGenres.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminGenres.GET("", handler.ListAdminGenres)
+	adminGenres.POST("", handler.CreateAdminGenre)
+	adminGenres.DELETE("/:genreId", handler.DeleteAdminGenre)
 
 	adminReviewComments := v1.Group("/admin/review-comments")
 	adminReviewComments.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

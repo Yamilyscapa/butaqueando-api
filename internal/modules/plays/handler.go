@@ -29,7 +29,12 @@ type servicePort interface {
 	ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	ListMySubmissions(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	UpdateMySubmission(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
+	CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
+	DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error
 	ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
+	GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
+	UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
 	ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	RejectSubmission(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
 	SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
@@ -393,6 +398,69 @@ func (h *Handler) UpdateMySubmission(c *gin.Context) {
 	httpx.WriteData(c, http.StatusOK, data)
 }
 
+func (h *Handler) ListAdminGenres(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListGenresQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListAdminGenres(c.Request.Context(), userID, role, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) CreateAdminGenre(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateGenreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreateAdminGenre(c.Request.Context(), userID, role, req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) DeleteAdminGenre(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	err := h.service.DeleteAdminGenre(c.Request.Context(), userID, role, c.Param("genreId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) ListAdminSubmissions(c *gin.Context) {
 	userID, userOK := middleware.GetAuthenticatedUserID(c)
 	role, roleOK := middleware.GetAuthenticatedRole(c)
@@ -414,6 +482,46 @@ func (h *Handler) ListAdminSubmissions(c *gin.Context) {
 	}
 
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) GetAdminSubmissionByID(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	data, err := h.service.GetAdminSubmissionByID(c.Request.Context(), userID, role, c.Param("playId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) UpdateAdminSubmission(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req UpdateSubmissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.UpdateAdminSubmission(c.Request.Context(), userID, role, c.Param("playId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ApproveSubmission(c *gin.Context) {

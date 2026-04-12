@@ -32,7 +32,12 @@ type fakeService struct {
 	listMyRevFn            func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	listMySubsFn           func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	updateMySubFn          func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	listAdminGenresFn      func(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
+	createAdminGenreFn     func(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
+	deleteAdminGenreFn     func(ctx context.Context, userID string, role string, genreID string) error
 	listAdminSubsFn        func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
+	getAdminSubByIDFn      func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
+	updateAdminSubFn       func(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
 	approveSubFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	rejectSubFn            func(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
 	setEngagementFn        func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
@@ -189,6 +194,46 @@ func (f *fakeService) ListAdminSubmissions(ctx context.Context, userID string, r
 	}
 
 	return SubmissionListData{}, nil
+}
+
+func (f *fakeService) ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error) {
+	if f.listAdminGenresFn != nil {
+		return f.listAdminGenresFn(ctx, userID, role, query)
+	}
+
+	return GenreListData{}, nil
+}
+
+func (f *fakeService) CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error) {
+	if f.createAdminGenreFn != nil {
+		return f.createAdminGenreFn(ctx, userID, role, req)
+	}
+
+	return GenreData{}, nil
+}
+
+func (f *fakeService) DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error {
+	if f.deleteAdminGenreFn != nil {
+		return f.deleteAdminGenreFn(ctx, userID, role, genreID)
+	}
+
+	return nil
+}
+
+func (f *fakeService) GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
+	if f.getAdminSubByIDFn != nil {
+		return f.getAdminSubByIDFn(ctx, userID, role, playID)
+	}
+
+	return SubmissionData{}, nil
+}
+
+func (f *fakeService) UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error) {
+	if f.updateAdminSubFn != nil {
+		return f.updateAdminSubFn(ctx, userID, role, playID, req)
+	}
+
+	return SubmissionData{}, nil
 }
 
 func (f *fakeService) ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
@@ -658,6 +703,144 @@ func TestHandlerApproveSubmissionRequiresAuth(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerListAdminGenresRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.GET("/v1/admin/genres", handler.ListAdminGenres)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/genres", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerCreateAdminGenreRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.POST("/v1/admin/genres", handler.CreateAdminGenre)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/genres", strings.NewReader(`{"name":"Drama"}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerDeleteAdminGenreRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.DELETE("/v1/admin/genres/:genreId", handler.DeleteAdminGenre)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/genres/00000000-0000-0000-0000-000000000101", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerListAdminGenresSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{listAdminGenresFn: func(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error) {
+		return GenreListData{Items: []GenreData{{ID: "00000000-0000-0000-0000-000000000101", Name: "Drama"}}}, nil
+	}})
+	router.GET("/v1/admin/genres", handler.ListAdminGenres)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/genres", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerGetAdminSubmissionByIDRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.GET("/v1/admin/submissions/plays/:playId", handler.GetAdminSubmissionByID)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerUpdateAdminSubmissionRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.PATCH("/v1/admin/submissions/plays/:playId", handler.UpdateAdminSubmission)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901", strings.NewReader(`{"title":"New"}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerGetAdminSubmissionByIDSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{getAdminSubByIDFn: func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
+		return SubmissionData{ID: playID, Title: "Hamlet", CurationStatus: "pending", CreatedByUserID: userID}, nil
+	}})
+	router.GET("/v1/admin/submissions/plays/:playId", handler.GetAdminSubmissionByID)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }
 

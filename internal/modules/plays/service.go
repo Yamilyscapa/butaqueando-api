@@ -45,6 +45,9 @@ type repositoryPort interface {
 	ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	GetSubmissionByID(ctx context.Context, playID string) (SubmissionRecord, error)
 	UpdateSubmission(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
+	ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	CreateGenre(ctx context.Context, name string) (GenreRecord, error)
+	DeleteGenre(ctx context.Context, genreID string) error
 	ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
 	ApproveSubmission(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	RejectSubmission(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
@@ -952,6 +955,162 @@ func (s *Service) ListAdminSubmissions(ctx context.Context, userID string, role 
 	return buildSubmissionListData(records, limit)
 }
 
+func (s *Service) ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error) {
+	if !isValidAuthUserID(userID) {
+		return GenreListData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return GenreListData{}, err
+	}
+
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return GenreListData{}, err
+	}
+
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return GenreListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListGenres(ctx, ListGenresParams{After: cursor, Limit: limit + 1})
+	if err != nil {
+		return GenreListData{}, sharederrors.Internal("failed to load genres", nil)
+	}
+
+	return buildGenreListData(records, limit)
+}
+
+func (s *Service) CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error) {
+	if !isValidAuthUserID(userID) {
+		return GenreData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return GenreData{}, err
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return GenreData{}, sharederrors.Validation("name must not be empty", nil)
+	}
+
+	record, err := s.repo.CreateGenre(ctx, name)
+	if err != nil {
+		if isDuplicatedKeyError(err) {
+			return GenreData{}, sharederrors.New(http.StatusConflict, "GENRE_ALREADY_EXISTS", "genre already exists", nil)
+		}
+
+		return GenreData{}, sharederrors.Internal("failed to create genre", nil)
+	}
+
+	return mapGenreRecord(record), nil
+}
+
+func (s *Service) DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error {
+	if !isValidAuthUserID(userID) {
+		return sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return err
+	}
+
+	if !isValidUUID(genreID) {
+		return sharederrors.Validation("invalid genreId", nil)
+	}
+
+	err := s.repo.DeleteGenre(ctx, genreID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("genre not found", nil)
+		}
+
+		if isForeignKeyViolationError(err) {
+			return sharederrors.New(http.StatusConflict, "GENRE_IN_USE", "genre is in use by plays", nil)
+		}
+
+		return sharederrors.Internal("failed to delete genre", nil)
+	}
+
+	return nil
+}
+
+func (s *Service) GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
+	if !isValidAuthUserID(userID) {
+		return SubmissionData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return SubmissionData{}, err
+	}
+
+	if !isValidUUID(playID) {
+		return SubmissionData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	record, err := s.repo.GetSubmissionByID(ctx, playID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SubmissionData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return SubmissionData{}, sharederrors.Internal("failed to load submission", nil)
+	}
+
+	return mapSubmissionRecord(record), nil
+}
+
+func (s *Service) UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error) {
+	if !isValidAuthUserID(userID) {
+		return SubmissionData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return SubmissionData{}, err
+	}
+
+	if !isValidUUID(playID) {
+		return SubmissionData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	if !hasSubmissionPatch(req) {
+		return SubmissionData{}, sharederrors.Validation("at least one submission field must be provided", nil)
+	}
+
+	current, err := s.repo.GetSubmissionByID(ctx, playID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SubmissionData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return SubmissionData{}, sharederrors.Internal("failed to update submission", nil)
+	}
+
+	if current.CurationStatus != "pending" {
+		return SubmissionData{}, invalidTransitionError(current.CurationStatus, "pending")
+	}
+
+	patch, err := validateSubmissionPatch(req)
+	if err != nil {
+		return SubmissionData{}, err
+	}
+
+	patch.UpdatedAt = time.Now().UTC()
+
+	record, err := s.repo.UpdateSubmission(ctx, playID, patch)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SubmissionData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return SubmissionData{}, sharederrors.Internal("failed to update submission", nil)
+	}
+
+	return mapSubmissionRecord(record), nil
+}
+
 func (s *Service) ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
 	if !isValidAuthUserID(userID) {
 		return SubmissionData{}, sharederrors.Unauthorized("invalid access token", nil)
@@ -1299,6 +1458,38 @@ func mapSubmissionRecord(record SubmissionRecord) SubmissionData {
 		CreatedAt:          record.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:          record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
+}
+
+func mapGenreRecord(record GenreRecord) GenreData {
+	return GenreData{
+		ID:   record.ID,
+		Name: record.Name,
+	}
+}
+
+func buildGenreListData(records []GenreRecord, limit int) (GenreListData, error) {
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]GenreData, 0, len(records))
+	for _, record := range records {
+		items = append(items, mapGenreRecord(record))
+	}
+
+	response := GenreListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeGenreListCursor(genreListCursor{Name: last.Name, GenreID: last.ID})
+		if err != nil {
+			return GenreListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
 }
 
 func buildSubmissionListData(records []SubmissionRecord, limit int) (SubmissionListData, error) {
@@ -1726,6 +1917,19 @@ func isDuplicatedKeyError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505"
+	}
+
+	return false
+}
+
+func isForeignKeyViolationError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23503"
 	}
 
 	return false

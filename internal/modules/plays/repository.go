@@ -967,6 +967,71 @@ func (r *Repository) GetSubmissionByID(ctx context.Context, playID string) (Subm
 	return r.getSubmissionByUUID(ctx, playUUID)
 }
 
+func (r *Repository) ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.genres AS g").
+		Select(`
+			g.id,
+			g.name
+		`)
+
+	query, err := applyGenreListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []genreRow
+	err = query.
+		Order("g.name ASC").
+		Order("g.id ASC").
+		Limit(params.Limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return mapGenreRows(rows), nil
+}
+
+func (r *Repository) CreateGenre(ctx context.Context, name string) (GenreRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return GenreRecord{}, err
+	}
+
+	entity := genreEntity{Name: name, CreatedAt: time.Now().UTC()}
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return GenreRecord{}, err
+	}
+
+	return GenreRecord{ID: entity.ID.String(), Name: entity.Name}, nil
+}
+
+func (r *Repository) DeleteGenre(ctx context.Context, genreID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	genreUUID, err := parseUUID(genreID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).Where("id = ?", genreUUID).Delete(&genreEntity{})
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err
@@ -1366,6 +1431,29 @@ func applySubmissionListCursor(query *gorm.DB, after *submissionListCursor) (*go
 	), nil
 }
 
+func applyGenreListCursor(query *gorm.DB, after *genreListCursor) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	genreUUID, err := parseUUID(after.GenreID)
+	if err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(after.Name)
+	if name == "" {
+		return nil, fmt.Errorf("invalid genre cursor")
+	}
+
+	return query.Where(
+		"(g.name > ?) OR (g.name = ? AND g.id > ?)",
+		name,
+		name,
+		genreUUID,
+	), nil
+}
+
 func applyEngagementPlayListCursor(query *gorm.DB, after *engagementPlayListCursor) (*gorm.DB, error) {
 	if after == nil {
 		return query, nil
@@ -1405,6 +1493,15 @@ func mapSubmissionRows(rows []submissionRow) []SubmissionRecord {
 			CreatedAt:          row.CreatedAt,
 			UpdatedAt:          row.UpdatedAt,
 		})
+	}
+
+	return records
+}
+
+func mapGenreRows(rows []genreRow) []GenreRecord {
+	records := make([]GenreRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, GenreRecord{ID: row.ID.String(), Name: row.Name})
 	}
 
 	return records
@@ -1557,6 +1654,11 @@ type submissionRow struct {
 	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
+type genreRow struct {
+	ID   uuid.UUID `gorm:"column:id"`
+	Name string    `gorm:"column:name"`
+}
+
 type playGenreRow struct {
 	ID   uuid.UUID `gorm:"column:id"`
 	Name string    `gorm:"column:name"`
@@ -1662,6 +1764,12 @@ type playEntity struct {
 	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
+type genreEntity struct {
+	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	Name      string    `gorm:"column:name"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
 type playMediaEntity struct {
 	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
 	PlayID    uuid.UUID `gorm:"column:play_id;type:uuid"`
@@ -1674,6 +1782,10 @@ type playMediaEntity struct {
 
 func (playEntity) TableName() string {
 	return "app.plays"
+}
+
+func (genreEntity) TableName() string {
+	return "app.genres"
 }
 
 func (playMediaEntity) TableName() string {

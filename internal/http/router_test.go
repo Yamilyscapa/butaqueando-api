@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/butaqueando/api/internal/shared/httpx"
@@ -247,6 +248,88 @@ func TestRouterAdminSubmissionsRequiresAuthorization(t *testing.T) {
 
 	if body.Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("expected code %q, got %q", "UNAUTHORIZED", body.Error.Code)
+	}
+}
+
+func TestRouterAdminGenresListRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/genres", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-genres-list-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestRouterAdminGenresCreateRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/genres", strings.NewReader(`{"name":"Drama"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-genres-create-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestRouterAdminGenresDeleteRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/genres/00000000-0000-0000-0000-000000000101", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-genres-delete-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestRouterAdminSubmissionDetailRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901", nil)
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-submission-detail-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestRouterAdminSubmissionUpdateRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Dependencies{DB: nil})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901", strings.NewReader(`{"title":"Updated"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(httpx.RequestIDHeader, "router-admin-submission-update-auth-test")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,11 @@ type ListReviewsQuery struct {
 
 type ListSubmissionsQuery struct {
 	Status string `form:"status"`
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
+type ListGenresQuery struct {
 	Cursor string `form:"cursor"`
 	Limit  int    `form:"limit"`
 }
@@ -104,6 +110,10 @@ type RejectSubmissionRequest struct {
 	Reason string `json:"reason"`
 }
 
+type CreateGenreRequest struct {
+	Name string `json:"name"`
+}
+
 type SetEngagementRequest struct {
 	Kind string `json:"kind"`
 }
@@ -138,6 +148,16 @@ type PlayStatsData struct {
 type PlayGenreData struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type GenreData struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type GenreListData struct {
+	Items      []GenreData `json:"items"`
+	NextCursor *string     `json:"nextCursor,omitempty"`
 }
 
 type PlayCastMemberData struct {
@@ -444,6 +464,11 @@ type ListSubmissionsParams struct {
 	Limit  int
 }
 
+type ListGenresParams struct {
+	After *genreListCursor
+	Limit int
+}
+
 type ListUserReviewsParams struct {
 	After *reviewListCursor
 	Limit int
@@ -466,6 +491,11 @@ type SubmissionRecord struct {
 	RejectedReason     *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type GenreRecord struct {
+	ID   string
+	Name string
 }
 
 type ReviewCommentRecord struct {
@@ -510,6 +540,11 @@ type reviewListCursor struct {
 type submissionListCursor struct {
 	CreatedAt time.Time `json:"createdAt"`
 	PlayID    string    `json:"playId"`
+}
+
+type genreListCursor struct {
+	Name    string `json:"name"`
+	GenreID string `json:"genreId"`
 }
 
 type engagementPlayListCursor struct {
@@ -635,6 +670,37 @@ func decodeSubmissionListCursor(raw string) (*submissionListCursor, error) {
 	}
 
 	if cursor.CreatedAt.IsZero() || cursor.PlayID == "" {
+		return nil, fmt.Errorf("invalid cursor payload")
+	}
+
+	return &cursor, nil
+}
+
+func encodeGenreListCursor(cursor genreListCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal cursor: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeGenreListCursor(raw string) (*genreListCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode cursor: %w", err)
+	}
+
+	var cursor genreListCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("unmarshal cursor: %w", err)
+	}
+
+	if strings.TrimSpace(cursor.Name) == "" || cursor.GenreID == "" {
 		return nil, fmt.Errorf("invalid cursor payload")
 	}
 
