@@ -8,21 +8,23 @@ type ProfileStatsData struct {
 }
 
 type MeProfileData struct {
-	ID          string           `json:"id"`
-	DisplayName string           `json:"displayName"`
-	Email       string           `json:"email"`
-	Role        string           `json:"role"`
-	Bio         *string          `json:"bio"`
-	AvatarURL   *string          `json:"avatarUrl"`
-	Stats       ProfileStatsData `json:"stats"`
+	ID            string           `json:"id"`
+	DisplayName   string           `json:"displayName"`
+	Email         string           `json:"email"`
+	Role          string           `json:"role"`
+	Bio           *string          `json:"bio"`
+	AvatarURL     *string          `json:"avatarUrl"`
+	AvatarVersion *string          `json:"avatarVersion"`
+	Stats         ProfileStatsData `json:"stats"`
 }
 
 type PublicProfileData struct {
-	ID          string           `json:"id"`
-	DisplayName string           `json:"displayName"`
-	Bio         *string          `json:"bio"`
-	AvatarURL   *string          `json:"avatarUrl"`
-	Stats       ProfileStatsData `json:"stats"`
+	ID            string           `json:"id"`
+	DisplayName   string           `json:"displayName"`
+	Bio           *string          `json:"bio"`
+	AvatarURL     *string          `json:"avatarUrl"`
+	AvatarVersion *string          `json:"avatarVersion"`
+	Stats         ProfileStatsData `json:"stats"`
 }
 
 type UpdateMeProfileRequest struct {
@@ -57,6 +59,7 @@ type MeProfileRecord struct {
 	Role            string
 	Bio             *string
 	AvatarObjectKey *string
+	AvatarVersion   string
 	FollowersCount  int64
 	FollowingCount  int64
 	WatchedCount    int64
@@ -68,6 +71,7 @@ type PublicProfileRecord struct {
 	DisplayName     string
 	Bio             *string
 	AvatarObjectKey *string
+	AvatarVersion   string
 	FollowersCount  int64
 	FollowingCount  int64
 	WatchedCount    int64

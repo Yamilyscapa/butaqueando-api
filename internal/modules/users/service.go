@@ -397,12 +397,13 @@ func normalizeWebPObjectKey(objectKey string) string {
 
 func mapMeProfileRecord(record MeProfileRecord, userMediaBaseURL string) MeProfileData {
 	return MeProfileData{
-		ID:          record.ID,
-		DisplayName: record.DisplayName,
-		Email:       record.Email,
-		Role:        record.Role,
-		Bio:         record.Bio,
-		AvatarURL:   buildAvatarURL(userMediaBaseURL, record.ID, record.AvatarObjectKey),
+		ID:            record.ID,
+		DisplayName:   record.DisplayName,
+		Email:         record.Email,
+		Role:          record.Role,
+		Bio:           record.Bio,
+		AvatarURL:     buildAvatarURL(userMediaBaseURL, record.ID, record.AvatarObjectKey, record.AvatarVersion),
+		AvatarVersion: &record.AvatarVersion,
 		Stats: ProfileStatsData{
 			FollowersCount: record.FollowersCount,
 			FollowingCount: record.FollowingCount,
@@ -414,10 +415,11 @@ func mapMeProfileRecord(record MeProfileRecord, userMediaBaseURL string) MeProfi
 
 func mapPublicProfileRecord(record PublicProfileRecord, userMediaBaseURL string) PublicProfileData {
 	return PublicProfileData{
-		ID:          record.ID,
-		DisplayName: record.DisplayName,
-		Bio:         record.Bio,
-		AvatarURL:   buildAvatarURL(userMediaBaseURL, record.ID, record.AvatarObjectKey),
+		ID:            record.ID,
+		DisplayName:   record.DisplayName,
+		Bio:           record.Bio,
+		AvatarURL:     buildAvatarURL(userMediaBaseURL, record.ID, record.AvatarObjectKey, record.AvatarVersion),
+		AvatarVersion: &record.AvatarVersion,
 		Stats: ProfileStatsData{
 			FollowersCount: record.FollowersCount,
 			FollowingCount: record.FollowingCount,
@@ -467,7 +469,7 @@ func validateImageMetadata(contentType string, contentLength int64, maxImageByte
 	return nil
 }
 
-func buildAvatarURL(baseURL string, userID string, avatarObjectKey *string) *string {
+func buildAvatarURL(baseURL string, userID string, avatarObjectKey *string, version string) *string {
 	if avatarObjectKey == nil || strings.TrimSpace(*avatarObjectKey) == "" {
 		return nil
 	}
@@ -478,5 +480,8 @@ func buildAvatarURL(baseURL string, userID string, avatarObjectKey *string) *str
 	}
 
 	url := base + "/" + userID + "/avatar"
+	if version != "" {
+		url += "?v=" + version
+	}
 	return &url
 }

@@ -241,7 +241,7 @@ func TestServiceUpdateMeProfileOptimizesAvatarAndNormalizesKey(t *testing.T) {
 			t.Fatalf("expected normalized webp avatar key")
 		}
 
-		return MeProfileRecord{ID: userID, DisplayName: "Ana", Email: "ana@example.com", Role: "user", AvatarObjectKey: patch.AvatarObjectKey}, nil
+		return MeProfileRecord{ID: userID, DisplayName: "Ana", Email: "ana@example.com", Role: "user", AvatarObjectKey: patch.AvatarObjectKey, AvatarVersion: "2025-01-01T00:00:00Z"}, nil
 	}}, WithMediaStorage(fakeStorage{
 		headObjectFn: func(ctx context.Context, input storage.HeadObjectInput) (storage.HeadObjectOutput, error) {
 			return storage.HeadObjectOutput{ContentType: "image/jpeg", ContentLength: int64(len(buf.Bytes()))}, nil
@@ -271,7 +271,11 @@ func TestServiceUpdateMeProfileOptimizesAvatarAndNormalizesKey(t *testing.T) {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 
-	if profile.AvatarURL == nil || !strings.HasSuffix(*profile.AvatarURL, "/avatar") {
-		t.Fatalf("expected avatar URL to be present")
+	if profile.AvatarURL == nil || !strings.Contains(*profile.AvatarURL, "/avatar?") {
+		t.Fatalf("expected avatar URL to contain /avatar, got %v", profile.AvatarURL)
+	}
+
+	if profile.AvatarVersion == nil || *profile.AvatarVersion == "" {
+		t.Fatalf("expected avatar version to be present")
 	}
 }

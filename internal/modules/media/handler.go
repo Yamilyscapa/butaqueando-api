@@ -38,6 +38,7 @@ func (h *Handler) GetUserAvatar(c *gin.Context) {
 		return
 	}
 
+	c.Header("Cache-Control", "no-store, private")
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 

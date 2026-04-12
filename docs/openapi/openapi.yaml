@@ -3235,6 +3235,10 @@ components:
         avatarUrl:
           type: string
           nullable: true
+        avatarVersion:
+          type: string
+          nullable: true
+          description: Cache-busting version derived from profile updated_at, used by avatarUrl
         stats:
           $ref: '#/components/schemas/ProfileStatsData'
 
@@ -3264,6 +3268,10 @@ components:
         avatarUrl:
           type: string
           nullable: true
+        avatarVersion:
+          type: string
+          nullable: true
+          description: Cache-busting version derived from profile updated_at, used by avatarUrl
         stats:
           $ref: '#/components/schemas/ProfileStatsData'
 

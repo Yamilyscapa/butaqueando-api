@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -63,6 +64,7 @@ func (r *Repository) GetPublicProfile(ctx context.Context, userID string) (Publi
 		DisplayName:     user.DisplayName,
 		Bio:             profile.Bio,
 		AvatarObjectKey: profile.AvatarObjectKey,
+		AvatarVersion:   profile.UpdatedAt.Format(time.RFC3339),
 		FollowersCount:  followersCount,
 		FollowingCount:  followingCount,
 		WatchedCount:    watchedCount,
@@ -119,6 +121,7 @@ func (r *Repository) GetMeProfile(ctx context.Context, userID string) (MeProfile
 		Role:            user.Role,
 		Bio:             profile.Bio,
 		AvatarObjectKey: profile.AvatarObjectKey,
+		AvatarVersion:   profile.UpdatedAt.Format(time.RFC3339),
 		FollowersCount:  followersCount,
 		FollowingCount:  followingCount,
 		WatchedCount:    watchedCount,
@@ -259,6 +262,7 @@ type userProfileEntity struct {
 	UserID          uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey"`
 	Bio             *string   `gorm:"column:bio"`
 	AvatarObjectKey *string   `gorm:"column:avatar_object_key"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
 
 func (userProfileEntity) TableName() string {
