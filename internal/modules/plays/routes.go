@@ -36,6 +36,7 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 
 	v1.GET("/feed", handler.Feed)
 	v1.GET("/search", handler.Search)
+	v1.GET("/genres", handler.ListGenres)
 
 	group := v1.Group(BasePath)
 

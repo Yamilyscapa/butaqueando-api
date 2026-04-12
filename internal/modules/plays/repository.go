@@ -947,11 +947,69 @@ func (r *Repository) CreateSubmission(ctx context.Context, userID string, params
 		UpdatedAt:          params.UpdatedAt,
 	}
 
-	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+	genreEntities := make([]playGenreEntity, 0, len(params.GenreIDs))
+	for _, genreID := range params.GenreIDs {
+		genreUUID, parseErr := parseUUID(genreID)
+		if parseErr != nil {
+			return SubmissionRecord{}, parseErr
+		}
+
+		genreEntities = append(genreEntities, playGenreEntity{GenreID: genreUUID})
+	}
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&entity).Error; err != nil {
+			return err
+		}
+
+		for idx := range genreEntities {
+			genreEntities[idx].PlayID = entity.ID
+		}
+
+		if len(genreEntities) > 0 {
+			if err := tx.Create(&genreEntities).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		return SubmissionRecord{}, err
 	}
 
 	return r.getSubmissionByUUID(ctx, entity.ID)
+}
+
+func (r *Repository) CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error) {
+	if err := r.ensureDB(); err != nil {
+		return 0, err
+	}
+
+	if len(genreIDs) == 0 {
+		return 0, nil
+	}
+
+	parsedIDs := make([]uuid.UUID, 0, len(genreIDs))
+	for _, genreID := range genreIDs {
+		genreUUID, err := parseUUID(genreID)
+		if err != nil {
+			return 0, err
+		}
+
+		parsedIDs = append(parsedIDs, genreUUID)
+	}
+
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("app.genres").
+		Where("id IN ?", parsedIDs).
+		Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func (r *Repository) GetSubmissionByID(ctx context.Context, playID string) (SubmissionRecord, error) {
@@ -1770,6 +1828,11 @@ type genreEntity struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
+type playGenreEntity struct {
+	PlayID  uuid.UUID `gorm:"column:play_id;type:uuid;primaryKey"`
+	GenreID uuid.UUID `gorm:"column:genre_id;type:uuid;primaryKey"`
+}
+
 type playMediaEntity struct {
 	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
 	PlayID    uuid.UUID `gorm:"column:play_id;type:uuid"`
@@ -1786,6 +1849,10 @@ func (playEntity) TableName() string {
 
 func (genreEntity) TableName() string {
 	return "app.genres"
+}
+
+func (playGenreEntity) TableName() string {
+	return "app.play_genres"
 }
 
 func (playMediaEntity) TableName() string {

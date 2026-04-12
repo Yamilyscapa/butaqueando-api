@@ -46,6 +46,7 @@ type repositoryPort interface {
 	GetSubmissionByID(ctx context.Context, playID string) (SubmissionRecord, error)
 	UpdateSubmission(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
 	ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error)
 	CreateGenre(ctx context.Context, name string) (GenreRecord, error)
 	DeleteGenre(ctx context.Context, genreID string) error
 	ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
@@ -625,6 +626,20 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		return SubmissionData{}, err
 	}
 
+	genreIDs, err := normalizeSubmissionGenreIDs(req.GenreIDs)
+	if err != nil {
+		return SubmissionData{}, err
+	}
+
+	genreCount, err := s.repo.CountGenresByIDs(ctx, genreIDs)
+	if err != nil {
+		return SubmissionData{}, sharederrors.Internal("failed to create submission", nil)
+	}
+
+	if genreCount != int64(len(genreIDs)) {
+		return SubmissionData{}, sharederrors.Validation("one or more genreIds are invalid", nil)
+	}
+
 	city := normalizeOptionalText(req.City)
 	now := time.Now().UTC()
 	record, err := s.repo.CreateSubmission(ctx, userID, CreateSubmissionParams{
@@ -635,6 +650,7 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		TheaterName:        theaterName,
 		City:               city,
 		AvailabilityStatus: availabilityStatus,
+		GenreIDs:           genreIDs,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	})
@@ -642,7 +658,7 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		return SubmissionData{}, sharederrors.Internal("failed to create submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) CreateSubmissionMediaUpload(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
@@ -920,7 +936,7 @@ func (s *Service) UpdateMySubmission(ctx context.Context, userID string, playID 
 		return SubmissionData{}, sharederrors.Internal("failed to update submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error) {
@@ -953,6 +969,25 @@ func (s *Service) ListAdminSubmissions(ctx context.Context, userID string, role 
 	}
 
 	return buildSubmissionListData(records, limit)
+}
+
+func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreListData, error) {
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return GenreListData{}, err
+	}
+
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return GenreListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListGenres(ctx, ListGenresParams{After: cursor, Limit: limit + 1})
+	if err != nil {
+		return GenreListData{}, sharederrors.Internal("failed to load genres", nil)
+	}
+
+	return buildGenreListData(records, limit)
 }
 
 func (s *Service) ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error) {
@@ -1059,7 +1094,7 @@ func (s *Service) GetAdminSubmissionByID(ctx context.Context, userID string, rol
 		return SubmissionData{}, sharederrors.Internal("failed to load submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error) {
@@ -1108,7 +1143,7 @@ func (s *Service) UpdateAdminSubmission(ctx context.Context, userID string, role
 		return SubmissionData{}, sharederrors.Internal("failed to update submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
@@ -1146,7 +1181,7 @@ func (s *Service) ApproveSubmission(ctx context.Context, userID string, role str
 		return SubmissionData{}, sharederrors.Internal("failed to approve submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) RejectSubmission(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error) {
@@ -1189,7 +1224,7 @@ func (s *Service) RejectSubmission(ctx context.Context, userID string, role stri
 		return SubmissionData{}, sharederrors.Internal("failed to reject submission", nil)
 	}
 
-	return mapSubmissionRecord(record), nil
+	return s.mapSubmissionWithGenres(ctx, record)
 }
 
 func (s *Service) SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error) {
@@ -1439,7 +1474,16 @@ func mapReviewCommentStatusRecord(record ReviewCommentStatusRecord) ReviewCommen
 	}
 }
 
-func mapSubmissionRecord(record SubmissionRecord) SubmissionData {
+func (s *Service) mapSubmissionWithGenres(ctx context.Context, record SubmissionRecord) (SubmissionData, error) {
+	genres, err := s.repo.ListPlayGenres(ctx, record.ID)
+	if err != nil {
+		return SubmissionData{}, sharederrors.Internal("failed to load submission", nil)
+	}
+
+	return mapSubmissionRecord(record, genres), nil
+}
+
+func mapSubmissionRecord(record SubmissionRecord, genres []PlayGenreRecord) SubmissionData {
 	return SubmissionData{
 		ID:                 record.ID,
 		Title:              record.Title,
@@ -1449,6 +1493,7 @@ func mapSubmissionRecord(record SubmissionRecord) SubmissionData {
 		TheaterName:        record.TheaterName,
 		City:               record.City,
 		AvailabilityStatus: record.AvailabilityStatus,
+		Genres:             mapPlayGenreRecords(genres),
 		CurationStatus:     record.CurationStatus,
 		CreatedByUserID:    record.CreatedByUserID,
 		ModeratedByUserID:  record.ModeratedByUserID,
@@ -1465,6 +1510,15 @@ func mapGenreRecord(record GenreRecord) GenreData {
 		ID:   record.ID,
 		Name: record.Name,
 	}
+}
+
+func mapPlayGenreRecords(records []PlayGenreRecord) []PlayGenreData {
+	genreItems := make([]PlayGenreData, 0, len(records))
+	for _, genre := range records {
+		genreItems = append(genreItems, PlayGenreData{ID: genre.ID, Name: genre.Name})
+	}
+
+	return genreItems
 }
 
 func buildGenreListData(records []GenreRecord, limit int) (GenreListData, error) {
@@ -1500,7 +1554,7 @@ func buildSubmissionListData(records []SubmissionRecord, limit int) (SubmissionL
 
 	items := make([]SubmissionData, 0, len(records))
 	for _, record := range records {
-		items = append(items, mapSubmissionRecord(record))
+		items = append(items, mapSubmissionRecord(record, nil))
 	}
 
 	response := SubmissionListData{Items: items}
@@ -1657,6 +1711,39 @@ func requiredSubmissionText(raw string, field string) (string, error) {
 	}
 
 	return trimmed, nil
+}
+
+func normalizeSubmissionGenreIDs(rawIDs []string) ([]string, error) {
+	if len(rawIDs) == 0 {
+		return nil, sharederrors.Validation("genreIds must include at least one genre", nil)
+	}
+
+	normalized := make([]string, 0, len(rawIDs))
+	seen := make(map[string]struct{}, len(rawIDs))
+
+	for _, rawID := range rawIDs {
+		genreID := strings.TrimSpace(rawID)
+		if genreID == "" {
+			return nil, sharederrors.Validation("genreIds must contain valid UUIDs", nil)
+		}
+
+		if !isValidUUID(genreID) {
+			return nil, sharederrors.Validation("genreIds must contain valid UUIDs", nil)
+		}
+
+		if _, exists := seen[genreID]; exists {
+			continue
+		}
+
+		seen[genreID] = struct{}{}
+		normalized = append(normalized, genreID)
+	}
+
+	if len(normalized) == 0 {
+		return nil, sharederrors.Validation("genreIds must include at least one genre", nil)
+	}
+
+	return normalized, nil
 }
 
 func normalizePlayMediaKind(raw string) (string, error) {

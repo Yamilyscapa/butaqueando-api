@@ -139,5 +139,11 @@ VALUES
     0,
     now() - interval '4 days'
   )
-ON CONFLICT (play_id, object_key)
-DO NOTHING;
+ON CONFLICT (id)
+DO UPDATE SET
+  play_id = EXCLUDED.play_id,
+  kind = EXCLUDED.kind,
+  object_key = EXCLUDED.object_key,
+  alt_text = EXCLUDED.alt_text,
+  sort_order = EXCLUDED.sort_order,
+  created_at = EXCLUDED.created_at;

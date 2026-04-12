@@ -24,6 +24,7 @@ type fakeService struct {
 	updateCommentFn        func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
 	listUserWatchFn        func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	listUserRevFn          func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
+	listGenresFn           func(ctx context.Context, query ListGenresQuery) (GenreListData, error)
 	createSubFn            func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
 	createSubMediaUploadFn func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
 	attachSubMediaFn       func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
@@ -122,6 +123,14 @@ func (f *fakeService) ListUserReviews(ctx context.Context, userID string, query 
 	}
 
 	return UserReviewListData{}, nil
+}
+
+func (f *fakeService) ListGenres(ctx context.Context, query ListGenresQuery) (GenreListData, error) {
+	if f.listGenresFn != nil {
+		return f.listGenresFn(ctx, query)
+	}
+
+	return GenreListData{}, nil
 }
 
 func (f *fakeService) CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error) {
@@ -556,7 +565,7 @@ func TestHandlerCreateSubmissionRequiresAuth(t *testing.T) {
 	router.POST("/v1/submissions/plays", handler.CreateSubmission)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/v1/submissions/plays", strings.NewReader(`{"title":"New play","synopsis":"syn","director":"dir","durationMinutes":90,"theaterName":"theater"}`))
+	request := httptest.NewRequest(http.MethodPost, "/v1/submissions/plays", strings.NewReader(`{"title":"New play","synopsis":"syn","director":"dir","durationMinutes":90,"theaterName":"theater","genreIds":["00000000-0000-0000-0000-000000000101"]}`))
 	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 
@@ -579,13 +588,33 @@ func TestHandlerCreateSubmissionSuccess(t *testing.T) {
 	router.POST("/v1/submissions/plays", handler.CreateSubmission)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/v1/submissions/plays", strings.NewReader(`{"title":"New play","synopsis":"syn","director":"dir","durationMinutes":90,"theaterName":"theater"}`))
+	request := httptest.NewRequest(http.MethodPost, "/v1/submissions/plays", strings.NewReader(`{"title":"New play","synopsis":"syn","director":"dir","durationMinutes":90,"theaterName":"theater","genreIds":["00000000-0000-0000-0000-000000000101"]}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer token")
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerListGenresSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{listGenresFn: func(ctx context.Context, query ListGenresQuery) (GenreListData, error) {
+		return GenreListData{Items: []GenreData{{ID: "00000000-0000-0000-0000-000000000101", Name: "Drama"}}}, nil
+	}})
+	router.GET("/v1/genres", handler.ListGenres)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/genres?limit=10", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }
 

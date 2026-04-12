@@ -74,13 +74,14 @@ type UpdateReviewCommentStatusRequest struct {
 }
 
 type CreateSubmissionRequest struct {
-	Title              string  `json:"title"`
-	Synopsis           string  `json:"synopsis"`
-	Director           string  `json:"director"`
-	DurationMinutes    int     `json:"durationMinutes"`
-	TheaterName        string  `json:"theaterName"`
-	City               *string `json:"city"`
-	AvailabilityStatus *string `json:"availabilityStatus"`
+	Title              string   `json:"title"`
+	Synopsis           string   `json:"synopsis"`
+	Director           string   `json:"director"`
+	DurationMinutes    int      `json:"durationMinutes"`
+	TheaterName        string   `json:"theaterName"`
+	City               *string  `json:"city"`
+	AvailabilityStatus *string  `json:"availabilityStatus"`
+	GenreIDs           []string `json:"genreIds"`
 }
 
 type CreateSubmissionMediaUploadRequest struct {
@@ -230,22 +231,23 @@ type ReviewCommentStatusData struct {
 }
 
 type SubmissionData struct {
-	ID                 string  `json:"id"`
-	Title              string  `json:"title"`
-	Synopsis           string  `json:"synopsis"`
-	Director           string  `json:"director"`
-	DurationMinutes    int     `json:"durationMinutes"`
-	TheaterName        string  `json:"theaterName"`
-	City               *string `json:"city"`
-	AvailabilityStatus string  `json:"availabilityStatus"`
-	CurationStatus     string  `json:"curationStatus"`
-	CreatedByUserID    string  `json:"createdByUserId"`
-	ModeratedByUserID  *string `json:"moderatedByUserId"`
-	ModeratedAt        *string `json:"moderatedAt"`
-	PublishedAt        *string `json:"publishedAt"`
-	RejectedReason     *string `json:"rejectedReason"`
-	CreatedAt          string  `json:"createdAt"`
-	UpdatedAt          string  `json:"updatedAt"`
+	ID                 string          `json:"id"`
+	Title              string          `json:"title"`
+	Synopsis           string          `json:"synopsis"`
+	Director           string          `json:"director"`
+	DurationMinutes    int             `json:"durationMinutes"`
+	TheaterName        string          `json:"theaterName"`
+	City               *string         `json:"city"`
+	AvailabilityStatus string          `json:"availabilityStatus"`
+	Genres             []PlayGenreData `json:"genres"`
+	CurationStatus     string          `json:"curationStatus"`
+	CreatedByUserID    string          `json:"createdByUserId"`
+	ModeratedByUserID  *string         `json:"moderatedByUserId"`
+	ModeratedAt        *string         `json:"moderatedAt"`
+	PublishedAt        *string         `json:"publishedAt"`
+	RejectedReason     *string         `json:"rejectedReason"`
+	CreatedAt          string          `json:"createdAt"`
+	UpdatedAt          string          `json:"updatedAt"`
 }
 
 type SubmissionListData struct {
@@ -431,6 +433,7 @@ type CreateSubmissionParams struct {
 	TheaterName        string
 	City               *string
 	AvailabilityStatus string
+	GenreIDs           []string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }

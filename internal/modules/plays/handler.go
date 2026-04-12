@@ -32,6 +32,7 @@ type servicePort interface {
 	ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
 	CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
 	DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error
+	ListGenres(ctx context.Context, query ListGenresQuery) (GenreListData, error)
 	ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
 	GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -286,6 +287,22 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) ListGenres(c *gin.Context) {
+	var query ListGenresQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListGenres(c.Request.Context(), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMyBookmarks(c *gin.Context) {

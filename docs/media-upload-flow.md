@@ -131,3 +131,12 @@ These routes return a temporary redirect to a short-lived pre-signed `GET` URL.
 - max image size configured by `S3_MAX_IMAGE_BYTES`
 - upload URL TTL: `S3_UPLOAD_URL_TTL`
 - download URL TTL: `S3_DOWNLOAD_URL_TTL`
+
+## Local mock media bootstrap
+
+- Run `make db-bootstrap` to apply schema + SQL seed data + seeded media uploads.
+- Run `make db-seed-media` to upload only seeded media objects.
+- The command uploads deterministic Unsplash photos to the same `objectKey` values seeded in SQL.
+- Seeded play media uses theater-related photos; seeded user avatars use portrait photos.
+- `UNSPLASH_ACCESS_KEY` is required for the media upload step.
+- If bucket env vars or `UNSPLASH_ACCESS_KEY` are missing, the media upload step is skipped without failing DB bootstrap.

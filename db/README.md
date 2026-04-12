@@ -20,7 +20,15 @@ psql "$DATABASE_URL" -f db/seeds/seed.sql
 make db-bootstrap
 ```
 
-This will apply the schema and then load realistic sample data for local development.
+This will apply the schema, load realistic sample data, and upload deterministic Unsplash media objects for local development.
+
+If bucket variables or `UNSPLASH_ACCESS_KEY` are not configured, the media upload step is skipped and schema/data seeding still succeeds.
+
+## Upload seeded media only
+
+```bash
+make db-seed-media
+```
 
 ### Local seed accounts
 
@@ -51,6 +59,8 @@ All seeded users share the password: `password`
 - `app.play_media` uniqueness is `(play_id, object_key)`.
 - `app.user_profiles.avatar_object_key` is nullable (avatar is optional).
 - Read URLs for media are generated at API layer via stable endpoints + redirect to pre-signed bucket URLs.
+- Seeded media uses deterministic `object_key` entries under `plays/...` and `users/...` and is backed by `make db-seed-media` uploads.
+- Seeded play assets are theater-related photos; seeded user avatars are people portraits.
 
 ## Latest migration
 

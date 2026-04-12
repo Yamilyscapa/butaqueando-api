@@ -32,6 +32,7 @@ type fakeRepository struct {
 	getSubmissionByIDFn    func(ctx context.Context, playID string) (SubmissionRecord, error)
 	updateSubmissionFn     func(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
 	listGenresFn           func(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	countGenresByIDsFn     func(ctx context.Context, genreIDs []string) (int64, error)
 	createGenreFn          func(ctx context.Context, name string) (GenreRecord, error)
 	deleteGenreFn          func(ctx context.Context, genreID string) error
 	listAdminSubmissionsFn func(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
@@ -202,6 +203,14 @@ func (f *fakeRepository) ListGenres(ctx context.Context, params ListGenresParams
 	}
 
 	return nil, nil
+}
+
+func (f *fakeRepository) CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error) {
+	if f.countGenresByIDsFn != nil {
+		return f.countGenresByIDsFn(ctx, genreIDs)
+	}
+
+	return 0, nil
 }
 
 func (f *fakeRepository) CreateGenre(ctx context.Context, name string) (GenreRecord, error) {
@@ -1012,21 +1021,53 @@ func TestServiceUpdateReviewCommentStatusSuccess(t *testing.T) {
 func TestServiceCreateSubmissionSuccess(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(&fakeRepository{createSubmissionFn: func(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error) {
-		if params.AvailabilityStatus != "in_theaters" {
-			t.Fatalf("expected default availability status")
-		}
+	service := NewService(&fakeRepository{
+		countGenresByIDsFn: func(ctx context.Context, genreIDs []string) (int64, error) {
+			if len(genreIDs) != 1 || genreIDs[0] != "00000000-0000-0000-0000-000000000101" {
+				t.Fatalf("expected one normalized genre id")
+			}
 
-		return SubmissionRecord{ID: "00000000-0000-0000-0000-000000000901", CreatedByUserID: userID, CurationStatus: "pending", Title: params.Title, Synopsis: params.Synopsis, Director: params.Director, DurationMinutes: params.DurationMinutes, TheaterName: params.TheaterName, AvailabilityStatus: params.AvailabilityStatus, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
-	}})
+			return 1, nil
+		},
+		createSubmissionFn: func(ctx context.Context, userID string, params CreateSubmissionParams) (SubmissionRecord, error) {
+			if params.AvailabilityStatus != "in_theaters" {
+				t.Fatalf("expected default availability status")
+			}
 
-	data, err := service.CreateSubmission(context.Background(), "00000000-0000-0000-0000-000000000002", CreateSubmissionRequest{Title: "Submission", Synopsis: "Synopsis", Director: "Director", DurationMinutes: 100, TheaterName: "Theater"})
+			if len(params.GenreIDs) != 1 || params.GenreIDs[0] != "00000000-0000-0000-0000-000000000101" {
+				t.Fatalf("expected one genre id in submission params")
+			}
+
+			return SubmissionRecord{ID: "00000000-0000-0000-0000-000000000901", CreatedByUserID: userID, CurationStatus: "pending", Title: params.Title, Synopsis: params.Synopsis, Director: params.Director, DurationMinutes: params.DurationMinutes, TheaterName: params.TheaterName, AvailabilityStatus: params.AvailabilityStatus, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
+		},
+	})
+
+	data, err := service.CreateSubmission(context.Background(), "00000000-0000-0000-0000-000000000002", CreateSubmissionRequest{Title: "Submission", Synopsis: "Synopsis", Director: "Director", DurationMinutes: 100, TheaterName: "Theater", GenreIDs: []string{"00000000-0000-0000-0000-000000000101"}})
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 
 	if data.CurationStatus != "pending" {
 		t.Fatalf("expected pending curation status")
+	}
+}
+
+func TestServiceCreateSubmissionRequiresGenres(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.CreateSubmission(context.Background(), "00000000-0000-0000-0000-000000000002", CreateSubmissionRequest{Title: "Submission", Synopsis: "Synopsis", Director: "Director", DurationMinutes: 100, TheaterName: "Theater", GenreIDs: []string{}})
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
 	}
 }
 
