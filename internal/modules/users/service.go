@@ -20,6 +20,8 @@ const (
 	defaultUploadURLTTL    = 15 * time.Minute
 	defaultMaxImageBytes   = 10 * 1024 * 1024
 	defaultUserMediaPrefix = "/v1/media/users"
+	avatarMaxWidth         = 200
+	avatarMaxHeight        = 200
 )
 
 type repositoryPort interface {
@@ -54,6 +56,8 @@ type OptimizeAvatarJob struct {
 	Storage      storage.Client
 	ObjectKey    string
 	Quality      int
+	MaxWidth     int
+	MaxHeight    int
 	CacheControl string
 }
 
@@ -71,7 +75,12 @@ func (j OptimizeAvatarJob) Run(ctx context.Context) error {
 		return err
 	}
 
-	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{Quality: j.Quality})
+	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
+		Quality:           j.Quality,
+		MaxWidth:          j.MaxWidth,
+		MaxHeight:         j.MaxHeight,
+		TargetContentType: "image/webp",
+	})
 	if err != nil {
 		return err
 	}
@@ -235,6 +244,13 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 			if err := validateImageMetadata(headObject.ContentType, headObject.ContentLength, s.maxImageBytes); err != nil {
 				return MeProfileData{}, err
 			}
+
+			optimizedObjectKey, optimizeErr := s.optimizeAndStoreAvatar(ctx, *patch.AvatarObjectKey)
+			if optimizeErr != nil {
+				return MeProfileData{}, optimizeErr
+			}
+
+			patch.AvatarObjectKey = &optimizedObjectKey
 		}
 	}
 
@@ -247,15 +263,6 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 		return MeProfileData{}, sharederrors.Internal("failed to update profile", nil)
 	}
 
-	if patch.AvatarObjectKeySet && patch.AvatarObjectKey != nil && s.optimizeEnabled && s.imageQueue != nil {
-		s.imageQueue.Enqueue(OptimizeAvatarJob{
-			Storage:      s.mediaStorage,
-			ObjectKey:    *patch.AvatarObjectKey,
-			Quality:      s.webpQuality,
-			CacheControl: "public, max-age=31536000, immutable",
-		})
-	}
-
 	return mapMeProfileRecord(record, s.userMediaBaseURL), nil
 }
 
@@ -264,7 +271,7 @@ func (s *Service) CreateAvatarUpload(ctx context.Context, userID string, req Cre
 		return CreateAvatarUploadData{}, sharederrors.Unauthorized("invalid access token", nil)
 	}
 
-	contentType, extension, err := normalizeImageContentType(req.ContentType)
+	contentType, _, err := normalizeImageContentType(req.ContentType)
 	if err != nil {
 		return CreateAvatarUploadData{}, err
 	}
@@ -277,7 +284,7 @@ func (s *Service) CreateAvatarUpload(ctx context.Context, userID string, req Cre
 		return CreateAvatarUploadData{}, sharederrors.Validation("contentLength exceeds max allowed size", nil)
 	}
 
-	objectKey := fmt.Sprintf("users/%s/avatar/%s.%s", userID, uuid.NewString(), extension)
+	objectKey := fmt.Sprintf("users/%s/avatar/%s.webp", userID, uuid.NewString())
 	contentLength := req.ContentLength
 	uploadURL, err := s.mediaStorage.PresignPutObject(ctx, storage.PresignPutObjectInput{
 		ObjectKey:     objectKey,
@@ -338,6 +345,54 @@ func validateAndBuildPatch(req UpdateMeProfileRequest) (UpdateMeProfilePatch, er
 	}
 
 	return patch, nil
+}
+
+func (s *Service) optimizeAndStoreAvatar(ctx context.Context, objectKey string) (string, error) {
+	content, err := s.mediaStorage.GetObject(ctx, storage.GetObjectInput{ObjectKey: objectKey})
+	if err != nil {
+		if storage.IsNotFoundError(err) {
+			return "", sharederrors.Validation("uploaded object was not found", nil)
+		}
+
+		return "", sharederrors.Internal("failed to update profile", nil)
+	}
+
+	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
+		Quality:           s.webpQuality,
+		MaxWidth:          avatarMaxWidth,
+		MaxHeight:         avatarMaxHeight,
+		TargetContentType: "image/webp",
+	})
+	if err != nil {
+		return "", sharederrors.Validation("uploaded object is not a valid image", nil)
+	}
+
+	optimizedObjectKey := normalizeWebPObjectKey(objectKey)
+	if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
+		ObjectKey:    optimizedObjectKey,
+		Content:      result.Content,
+		ContentType:  result.ContentType,
+		CacheControl: "public, max-age=31536000, immutable",
+	}); err != nil {
+		return "", sharederrors.Internal("failed to update profile", nil)
+	}
+
+	return optimizedObjectKey, nil
+}
+
+func normalizeWebPObjectKey(objectKey string) string {
+	trimmed := strings.TrimSpace(objectKey)
+	if trimmed == "" {
+		return ""
+	}
+
+	lastSlash := strings.LastIndex(trimmed, "/")
+	lastDot := strings.LastIndex(trimmed, ".")
+	if lastDot > lastSlash {
+		return trimmed[:lastDot] + ".webp"
+	}
+
+	return trimmed + ".webp"
 }
 
 func mapMeProfileRecord(record MeProfileRecord, userMediaBaseURL string) MeProfileData {

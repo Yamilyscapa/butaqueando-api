@@ -782,6 +782,7 @@ paths:
     post:
       tags: [plays]
       summary: Create pre-signed upload URL for submission media
+      description: Uploaded files are normalized to WebP and resized server-side before media is attached.
       security:
         - BearerAuth: []
       parameters:
@@ -825,6 +826,7 @@ paths:
     post:
       tags: [plays]
       summary: Attach uploaded media to submission
+      description: Attached images are stored as WebP fit-inside a maximum 1080x1920 box.
       security:
         - BearerAuth: []
       parameters:
@@ -1843,6 +1845,7 @@ paths:
     post:
       tags: [users]
       summary: Create pre-signed upload URL for avatar
+      description: Uploaded files are normalized to WebP and resized server-side before profile update.
       security:
         - BearerAuth: []
       parameters:
@@ -2168,6 +2171,7 @@ paths:
     get:
       tags: [media]
       summary: Redirect to pre-signed user avatar URL
+      description: Avatar media is served from an optimized WebP object (fit-inside 200x200).
       parameters:
         - $ref: '#/components/parameters/XRequestID'
         - name: userId

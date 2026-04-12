@@ -23,6 +23,8 @@ const (
 	defaultUploadURLTTL    = 15 * time.Minute
 	defaultMaxImageBytes   = 10 * 1024 * 1024
 	defaultPlayMediaPrefix = "/v1/media/plays"
+	playMediaMaxWidth      = 1080
+	playMediaMaxHeight     = 1920
 )
 
 type repositoryPort interface {
@@ -85,6 +87,8 @@ type OptimizeMediaJob struct {
 	Storage      storage.Client
 	ObjectKey    string
 	Quality      int
+	MaxWidth     int
+	MaxHeight    int
 	CacheControl string
 }
 
@@ -102,7 +106,12 @@ func (j OptimizeMediaJob) Run(ctx context.Context) error {
 		return err
 	}
 
-	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{Quality: j.Quality})
+	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
+		Quality:           j.Quality,
+		MaxWidth:          j.MaxWidth,
+		MaxHeight:         j.MaxHeight,
+		TargetContentType: "image/webp",
+	})
 	if err != nil {
 		return err
 	}
@@ -674,7 +683,7 @@ func (s *Service) CreateSubmissionMediaUpload(ctx context.Context, userID string
 		return CreateSubmissionMediaUploadData{}, err
 	}
 
-	contentType, extension, err := normalizeImageContentType(req.ContentType)
+	contentType, _, err := normalizeImageContentType(req.ContentType)
 	if err != nil {
 		return CreateSubmissionMediaUploadData{}, err
 	}
@@ -704,7 +713,7 @@ func (s *Service) CreateSubmissionMediaUpload(ctx context.Context, userID string
 		return CreateSubmissionMediaUploadData{}, invalidTransitionError(current.CurationStatus, "pending")
 	}
 
-	objectKey := fmt.Sprintf("plays/%s/%s.%s", playID, uuid.NewString(), extension)
+	objectKey := fmt.Sprintf("plays/%s/%s.webp", playID, uuid.NewString())
 	contentLength := req.ContentLength
 	uploadURL, err := s.mediaStorage.PresignPutObject(ctx, storage.PresignPutObjectInput{
 		ObjectKey:     objectKey,
@@ -786,10 +795,15 @@ func (s *Service) AttachSubmissionMedia(ctx context.Context, userID string, play
 		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
 	}
 
+	optimizedObjectKey, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
+	if err != nil {
+		return PlayMediaData{}, err
+	}
+
 	record, err := s.repo.CreatePlayMedia(ctx, CreatePlayMediaParams{
 		PlayID:    playID,
 		Kind:      kind,
-		ObjectKey: objectKey,
+		ObjectKey: optimizedObjectKey,
 		AltText:   altText,
 		SortOrder: sortOrder,
 		CreatedAt: time.Now().UTC(),
@@ -800,15 +814,6 @@ func (s *Service) AttachSubmissionMedia(ctx context.Context, userID string, play
 		}
 
 		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
-	}
-
-	if s.optimizeEnabled && s.imageQueue != nil {
-		s.imageQueue.Enqueue(OptimizeMediaJob{
-			Storage:      s.mediaStorage,
-			ObjectKey:    objectKey,
-			Quality:      s.webpQuality,
-			CacheControl: "public, max-age=31536000, immutable",
-		})
 	}
 
 	return mapPlayMediaRecord(playID, record, s.playMediaBaseURL), nil
@@ -1702,6 +1707,54 @@ func normalizeOptionalText(raw *string) *string {
 	}
 
 	return &trimmed
+}
+
+func (s *Service) optimizeAndStorePlayMedia(ctx context.Context, objectKey string) (string, error) {
+	content, err := s.mediaStorage.GetObject(ctx, storage.GetObjectInput{ObjectKey: objectKey})
+	if err != nil {
+		if storage.IsNotFoundError(err) {
+			return "", sharederrors.Validation("uploaded object was not found", nil)
+		}
+
+		return "", sharederrors.Internal("failed to attach media", nil)
+	}
+
+	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
+		Quality:           s.webpQuality,
+		MaxWidth:          playMediaMaxWidth,
+		MaxHeight:         playMediaMaxHeight,
+		TargetContentType: "image/webp",
+	})
+	if err != nil {
+		return "", sharederrors.Validation("uploaded object is not a valid image", nil)
+	}
+
+	optimizedObjectKey := normalizeWebPObjectKey(objectKey)
+	if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
+		ObjectKey:    optimizedObjectKey,
+		Content:      result.Content,
+		ContentType:  result.ContentType,
+		CacheControl: "public, max-age=31536000, immutable",
+	}); err != nil {
+		return "", sharederrors.Internal("failed to attach media", nil)
+	}
+
+	return optimizedObjectKey, nil
+}
+
+func normalizeWebPObjectKey(objectKey string) string {
+	trimmed := strings.TrimSpace(objectKey)
+	if trimmed == "" {
+		return ""
+	}
+
+	lastSlash := strings.LastIndex(trimmed, "/")
+	lastDot := strings.LastIndex(trimmed, ".")
+	if lastDot > lastSlash {
+		return trimmed[:lastDot] + ".webp"
+	}
+
+	return trimmed + ".webp"
 }
 
 func requiredSubmissionText(raw string, field string) (string, error) {
