@@ -240,6 +240,7 @@ type SubmissionData struct {
 	City               *string         `json:"city"`
 	AvailabilityStatus string          `json:"availabilityStatus"`
 	Genres             []PlayGenreData `json:"genres"`
+	Media              []PlayMediaData `json:"media,omitempty"`
 	CurationStatus     string          `json:"curationStatus"`
 	CreatedByUserID    string          `json:"createdByUserId"`
 	ModeratedByUserID  *string         `json:"moderatedByUserId"`
@@ -362,6 +363,7 @@ type PlayMediaRecord struct {
 	ObjectKey string
 	AltText   *string
 	SortOrder int
+	PlayID    string
 }
 
 type ReviewRecord struct {

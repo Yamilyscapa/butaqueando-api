@@ -350,7 +350,7 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 
 	media := make([]PlayMediaRecord, 0, len(rows))
 	for _, row := range rows {
-		media = append(media, PlayMediaRecord{ID: row.ID.String(), Kind: row.Kind, ObjectKey: row.ObjectKey, AltText: row.AltText, SortOrder: row.SortOrder})
+		media = append(media, PlayMediaRecord{ID: row.ID.String(), Kind: row.Kind, ObjectKey: row.ObjectKey, AltText: row.AltText, SortOrder: row.SortOrder, PlayID: playID})
 	}
 
 	return media, nil
@@ -1363,6 +1363,7 @@ func (r *Repository) CreatePlayMedia(ctx context.Context, params CreatePlayMedia
 		ObjectKey: entity.ObjectKey,
 		AltText:   entity.AltText,
 		SortOrder: entity.SortOrder,
+		PlayID:    params.PlayID,
 	}, nil
 }
 
