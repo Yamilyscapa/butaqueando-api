@@ -3,13 +3,39 @@ package plays
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
+
+type fakePresignStorage struct{}
+
+func (fakePresignStorage) Bucket() string { return "test-bucket" }
+
+func (fakePresignStorage) PresignPutObject(_ context.Context, _ storage.PresignPutObjectInput) (string, error) {
+	return "", storage.ErrClientNotConfigured
+}
+
+func (fakePresignStorage) PresignGetObject(_ context.Context, input storage.PresignGetObjectInput) (string, error) {
+	return "https://presigned.example.com/" + input.ObjectKey, nil
+}
+
+func (fakePresignStorage) HeadObject(_ context.Context, _ storage.HeadObjectInput) (storage.HeadObjectOutput, error) {
+	return storage.HeadObjectOutput{}, storage.ErrClientNotConfigured
+}
+
+func (fakePresignStorage) GetObject(_ context.Context, _ storage.GetObjectInput) ([]byte, error) {
+	return nil, storage.ErrClientNotConfigured
+}
+
+func (fakePresignStorage) PutObject(_ context.Context, _ storage.PutObjectInput) error {
+	return storage.ErrClientNotConfigured
+}
 
 type fakeRepository struct {
 	listFeedFn             func(ctx context.Context, params FeedListParams) ([]PlayListRecord, error)
@@ -39,6 +65,8 @@ type fakeRepository struct {
 	approveSubmissionFn    func(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	rejectSubmissionFn     func(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
 	createPlayMediaFn      func(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error)
+	getPlayMediaByIDFn     func(ctx context.Context, mediaID string) (PlayMediaRecord, error)
+	deletePlayMediaFn      func(ctx context.Context, mediaID string) error
 	setEngagementFn        func(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error
 	deleteEngagementFn     func(ctx context.Context, userID string, playID string, kind string) error
 	engagementStateFn      func(ctx context.Context, userID string, playID string) (EngagementStateRecord, error)
@@ -259,6 +287,22 @@ func (f *fakeRepository) CreatePlayMedia(ctx context.Context, params CreatePlayM
 	}
 
 	return PlayMediaRecord{}, nil
+}
+
+func (f *fakeRepository) GetPlayMediaByID(ctx context.Context, mediaID string) (PlayMediaRecord, error) {
+	if f.getPlayMediaByIDFn != nil {
+		return f.getPlayMediaByIDFn(ctx, mediaID)
+	}
+
+	return PlayMediaRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) DeletePlayMedia(ctx context.Context, mediaID string) error {
+	if f.deletePlayMediaFn != nil {
+		return f.deletePlayMediaFn(ctx, mediaID)
+	}
+
+	return nil
 }
 
 func (f *fakeRepository) SetEngagement(ctx context.Context, userID string, playID string, kind string, createdAt time.Time) error {
@@ -1237,6 +1281,100 @@ func TestServiceGetAdminSubmissionByIDRequiresAdmin(t *testing.T) {
 
 	if appErr.Code != "FORBIDDEN" {
 		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceGetAdminSubmissionByIDIncludesMedia(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	repo := &fakeRepository{
+		getSubmissionByIDFn: func(ctx context.Context, playID string) (SubmissionRecord, error) {
+			return SubmissionRecord{
+				ID:              playID,
+				Title:           "Hamlet",
+				CurationStatus:  "pending",
+				CreatedByUserID: "00000000-0000-0000-0000-000000000002",
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}, nil
+		},
+		listPlayGenresFn: func(ctx context.Context, playID string) ([]PlayGenreRecord, error) {
+			return []PlayGenreRecord{{ID: "00000000-0000-0000-0000-000000000101", Name: "Drama"}}, nil
+		},
+		listPlayMediaFn: func(ctx context.Context, playID string) ([]PlayMediaRecord, error) {
+			return []PlayMediaRecord{
+				{ID: "00000000-0000-0000-0000-000000000401", Kind: "poster", ObjectKey: "plays/00000000-0000-0000-0000-000000000901/1.jpg", SortOrder: 0},
+				{ID: "00000000-0000-0000-0000-000000000402", Kind: "photo", ObjectKey: "plays/00000000-0000-0000-0000-000000000901/2.jpg", SortOrder: 1},
+			}, nil
+		},
+	}
+
+	service := NewService(repo)
+	data, err := service.GetAdminSubmissionByID(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000901")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(data.Media) != 2 {
+		t.Fatalf("expected 2 media items, got %d", len(data.Media))
+	}
+
+	if data.Media[0].Kind != "poster" {
+		t.Fatalf("expected first media kind to be poster, got %q", data.Media[0].Kind)
+	}
+
+	if data.Media[0].URL == "" {
+		t.Fatalf("expected first media item to have a URL")
+	}
+
+	if !strings.HasPrefix(data.Media[0].URL, "/v1/media/plays/") {
+		t.Fatalf("expected fallback URL path, got %q", data.Media[0].URL)
+	}
+
+	if len(data.Genres) != 1 {
+		t.Fatalf("expected 1 genre, got %d", len(data.Genres))
+	}
+}
+
+func TestServiceGetAdminSubmissionByIDPresignedMediaURL(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	repo := &fakeRepository{
+		getSubmissionByIDFn: func(ctx context.Context, playID string) (SubmissionRecord, error) {
+			return SubmissionRecord{
+				ID:              playID,
+				Title:           "Hamlet",
+				CurationStatus:  "pending",
+				CreatedByUserID: "00000000-0000-0000-0000-000000000002",
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}, nil
+		},
+		listPlayGenresFn: func(ctx context.Context, playID string) ([]PlayGenreRecord, error) {
+			return nil, nil
+		},
+		listPlayMediaFn: func(ctx context.Context, playID string) ([]PlayMediaRecord, error) {
+			return []PlayMediaRecord{
+				{ID: "00000000-0000-0000-0000-000000000401", Kind: "poster", ObjectKey: "plays/test-play/1.jpg", SortOrder: 0},
+			}, nil
+		},
+	}
+
+	fakeStorage := &fakePresignStorage{}
+	service := NewService(repo, WithMediaStorage(fakeStorage), WithMediaDownloadTTL(15*time.Minute))
+	data, err := service.GetAdminSubmissionByID(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000901")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(data.Media) != 1 {
+		t.Fatalf("expected 1 media item, got %d", len(data.Media))
+	}
+
+	if data.Media[0].URL != "https://presigned.example.com/plays/test-play/1.jpg" {
+		t.Fatalf("expected presigned URL, got %q", data.Media[0].URL)
 	}
 }
 

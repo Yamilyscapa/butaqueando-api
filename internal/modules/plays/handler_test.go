@@ -14,35 +14,38 @@ import (
 )
 
 type fakeService struct {
-	feedFn                 func(ctx context.Context, query FeedQuery) (FeedData, error)
-	searchFn               func(ctx context.Context, query SearchQuery) (SearchData, error)
-	getByID                func(ctx context.Context, playID string) (PlayDetailsData, error)
-	listReviewsFn          func(ctx context.Context, playID string, query ListReviewsQuery) (ReviewListData, error)
-	createReviewFn         func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
-	updateReviewFn         func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
-	createCommentFn        func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
-	updateCommentFn        func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
-	listUserWatchFn        func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listUserRevFn          func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
-	listGenresFn           func(ctx context.Context, query ListGenresQuery) (GenreListData, error)
-	createSubFn            func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
-	createSubMediaUploadFn func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
-	attachSubMediaFn       func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
-	listMyBooksFn          func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listMyWatchFn          func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
-	listMyRevFn            func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
-	listMySubsFn           func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
-	updateMySubFn          func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
-	listAdminGenresFn      func(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
-	createAdminGenreFn     func(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
-	deleteAdminGenreFn     func(ctx context.Context, userID string, role string, genreID string) error
-	listAdminSubsFn        func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
-	getAdminSubByIDFn      func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
-	updateAdminSubFn       func(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
-	approveSubFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
-	rejectSubFn            func(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
-	setEngagementFn        func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
-	deleteEngageFn         func(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
+	feedFn                      func(ctx context.Context, query FeedQuery) (FeedData, error)
+	searchFn                    func(ctx context.Context, query SearchQuery) (SearchData, error)
+	getByID                     func(ctx context.Context, playID string) (PlayDetailsData, error)
+	listReviewsFn               func(ctx context.Context, playID string, query ListReviewsQuery) (ReviewListData, error)
+	createReviewFn              func(ctx context.Context, userID string, playID string, req CreateReviewRequest) (ReviewData, error)
+	updateReviewFn              func(ctx context.Context, userID string, reviewID string, req UpdateReviewRequest) (ReviewData, error)
+	createCommentFn             func(ctx context.Context, userID string, reviewID string, req CreateReviewCommentRequest) (ReviewCommentData, error)
+	updateCommentFn             func(ctx context.Context, userID string, role string, commentID string, req UpdateReviewCommentStatusRequest) (ReviewCommentStatusData, error)
+	listUserWatchFn             func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listUserRevFn               func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
+	listGenresFn                func(ctx context.Context, query ListGenresQuery) (GenreListData, error)
+	createSubFn                 func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
+	createSubMediaUploadFn      func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	attachSubMediaFn            func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
+	listMyBooksFn               func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyWatchFn               func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyRevFn                 func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
+	listMySubsFn                func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
+	updateMySubFn               func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	listAdminGenresFn           func(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
+	createAdminGenreFn          func(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
+	deleteAdminGenreFn          func(ctx context.Context, userID string, role string, genreID string) error
+	listAdminSubsFn             func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
+	getAdminSubByIDFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
+	updateAdminSubFn            func(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	approveSubFn                func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
+	rejectSubFn                 func(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
+	createAdminSubMediaUploadFn func(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	attachAdminSubMediaFn       func(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
+	deleteAdminSubMediaFn       func(ctx context.Context, userID string, role string, playID string, mediaID string) error
+	setEngagementFn             func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
+	deleteEngageFn              func(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
 }
 
 func (f *fakeService) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
@@ -259,6 +262,30 @@ func (f *fakeService) RejectSubmission(ctx context.Context, userID string, role 
 	}
 
 	return SubmissionData{}, nil
+}
+
+func (f *fakeService) CreateAdminSubmissionMediaUpload(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+	if f.createAdminSubMediaUploadFn != nil {
+		return f.createAdminSubMediaUploadFn(ctx, userID, role, playID, req)
+	}
+
+	return CreateSubmissionMediaUploadData{}, nil
+}
+
+func (f *fakeService) AttachAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+	if f.attachAdminSubMediaFn != nil {
+		return f.attachAdminSubMediaFn(ctx, userID, role, playID, req)
+	}
+
+	return PlayMediaData{}, nil
+}
+
+func (f *fakeService) DeleteAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, mediaID string) error {
+	if f.deleteAdminSubMediaFn != nil {
+		return f.deleteAdminSubMediaFn(ctx, userID, role, playID, mediaID)
+	}
+
+	return nil
 }
 
 func (f *fakeService) SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error) {
@@ -859,7 +886,23 @@ func TestHandlerGetAdminSubmissionByIDSuccess(t *testing.T) {
 		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
 	}))
 	handler := NewHandler(&fakeService{getAdminSubByIDFn: func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
-		return SubmissionData{ID: playID, Title: "Hamlet", CurationStatus: "pending", CreatedByUserID: userID}, nil
+		return SubmissionData{
+			ID:                 playID,
+			Title:              "Hamlet",
+			CurationStatus:     "pending",
+			CreatedByUserID:    userID,
+			DurationMinutes:    120,
+			TheaterName:        "Globe",
+			Synopsis:           "A tragedy",
+			Director:           "Shakespeare",
+			AvailabilityStatus: "in_theaters",
+			Genres:             []PlayGenreData{{ID: "00000000-0000-0000-0000-000000000101", Name: "Drama"}},
+			Media: []PlayMediaData{
+				{ID: "00000000-0000-0000-0000-000000000401", Kind: "poster", URL: "/v1/media/plays/" + playID + "/00000000-0000-0000-0000-000000000401", SortOrder: 0},
+			},
+			CreatedAt: "2025-01-01T00:00:00Z",
+			UpdatedAt: "2025-01-01T00:00:00Z",
+		}, nil
 	}})
 	router.GET("/v1/admin/submissions/plays/:playId", handler.GetAdminSubmissionByID)
 
@@ -870,6 +913,20 @@ func TestHandlerGetAdminSubmissionByIDSuccess(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response body: %v", err)
+	}
+
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object in response")
+	}
+
+	if _, hasMedia := data["media"]; !hasMedia {
+		t.Fatalf("expected media field in admin submission response")
 	}
 }
 
@@ -897,26 +954,108 @@ func TestHandlerCreateSubmissionMediaUploadSuccess(t *testing.T) {
 	}
 }
 
-func TestHandlerAttachSubmissionMediaSuccess(t *testing.T) {
+func TestHandlerCreateAdminSubmissionMediaUploadRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.POST("/v1/admin/submissions/plays/:playId/media/uploads", handler.CreateAdminSubmissionMediaUpload)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901/media/uploads", strings.NewReader(`{"kind":"poster","contentType":"image/jpeg","contentLength":123}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerCreateAdminSubmissionMediaUploadSuccess(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
-		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
 	}))
-	handler := NewHandler(&fakeService{attachSubMediaFn: func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
-		return PlayMediaData{ID: "00000000-0000-0000-0000-000000000401", Kind: req.Kind, URL: "/v1/media/plays/" + playID + "/00000000-0000-0000-0000-000000000401", SortOrder: 0}, nil
+	handler := NewHandler(&fakeService{createAdminSubMediaUploadFn: func(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+		return CreateSubmissionMediaUploadData{ObjectKey: "plays/" + playID + "/1.jpg", UploadURL: "https://upload.example.com"}, nil
 	}})
-	router.POST("/v1/me/submissions/plays/:playId/media", handler.AttachSubmissionMedia)
+	router.POST("/v1/admin/submissions/plays/:playId/media/uploads", handler.CreateAdminSubmissionMediaUpload)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/v1/me/submissions/plays/00000000-0000-0000-0000-000000000201/media", strings.NewReader(`{"kind":"poster","objectKey":"plays/00000000-0000-0000-0000-000000000201/1.jpg"}`))
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901/media/uploads", strings.NewReader(`{"kind":"poster","contentType":"image/jpeg","contentLength":123}`))
 	request.Header.Set("Authorization", "Bearer token")
 	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerAttachAdminSubmissionMediaSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{attachAdminSubMediaFn: func(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+		return PlayMediaData{ID: "00000000-0000-0000-0000-000000000401", Kind: req.Kind, URL: "https://presigned.example.com/plays/test.jpg", SortOrder: 0}, nil
+	}})
+	router.POST("/v1/admin/submissions/plays/:playId/media", handler.AttachAdminSubmissionMedia)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901/media", strings.NewReader(`{"kind":"poster","objectKey":"plays/00000000-0000-0000-0000-000000000901/1.jpg"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerDeleteAdminSubmissionMediaSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{})
+	router.DELETE("/v1/admin/submissions/plays/:playId/media/:mediaId", handler.DeleteAdminSubmissionMedia)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901/media/00000000-0000-0000-0000-000000000401", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestHandlerDeleteAdminSubmissionMediaRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.DELETE("/v1/admin/submissions/plays/:playId/media/:mediaId", handler.DeleteAdminSubmissionMedia)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/submissions/plays/00000000-0000-0000-0000-000000000901/media/00000000-0000-0000-0000-000000000401", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
 	}
 }
