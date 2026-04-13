@@ -21,6 +21,7 @@ const (
 	defaultListLimit       = 20
 	maxListLimit           = 50
 	defaultUploadURLTTL    = 15 * time.Minute
+	defaultDownloadURLTTL  = 15 * time.Minute
 	defaultMaxImageBytes   = 10 * 1024 * 1024
 	defaultPlayMediaPrefix = "/v1/media/plays"
 	playMediaMaxWidth      = 1080
@@ -34,6 +35,8 @@ type repositoryPort interface {
 	ListPlayGenres(ctx context.Context, playID string) ([]PlayGenreRecord, error)
 	ListPlayCast(ctx context.Context, playID string) ([]PlayCastRecord, error)
 	ListPlayMedia(ctx context.Context, playID string) ([]PlayMediaRecord, error)
+	GetPlayMediaByID(ctx context.Context, mediaID string) (PlayMediaRecord, error)
+	DeletePlayMedia(ctx context.Context, mediaID string) error
 	IsPlayPublished(ctx context.Context, playID string) (bool, error)
 	UserExists(ctx context.Context, userID string) (bool, error)
 	ListPublishedReviews(ctx context.Context, params ListReviewsParams) ([]ReviewRecord, error)
@@ -65,6 +68,7 @@ type Service struct {
 	repo             repositoryPort
 	mediaStorage     storage.Client
 	mediaUploadTTL   time.Duration
+	mediaDownloadTTL time.Duration
 	maxImageBytes    int64
 	playMediaBaseURL string
 	imageQueue       ImageQueue
@@ -140,6 +144,12 @@ func WithMediaUploadTTL(ttl time.Duration) ServiceOption {
 	}
 }
 
+func WithMediaDownloadTTL(ttl time.Duration) ServiceOption {
+	return func(s *Service) {
+		s.mediaDownloadTTL = ttl
+	}
+}
+
 func WithMaxImageBytes(maxBytes int64) ServiceOption {
 	return func(s *Service) {
 		s.maxImageBytes = maxBytes
@@ -170,6 +180,7 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 		repo:             repo,
 		mediaStorage:     storage.NoopClient{},
 		mediaUploadTTL:   defaultUploadURLTTL,
+		mediaDownloadTTL: defaultDownloadURLTTL,
 		maxImageBytes:    defaultMaxImageBytes,
 		playMediaBaseURL: defaultPlayMediaPrefix,
 		optimizeEnabled:  true,
@@ -188,6 +199,10 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 
 	if service.mediaUploadTTL <= 0 {
 		service.mediaUploadTTL = defaultUploadURLTTL
+	}
+
+	if service.mediaDownloadTTL <= 0 {
+		service.mediaDownloadTTL = defaultDownloadURLTTL
 	}
 
 	if service.maxImageBytes <= 0 {
@@ -1099,7 +1114,7 @@ func (s *Service) GetAdminSubmissionByID(ctx context.Context, userID string, rol
 		return SubmissionData{}, sharederrors.Internal("failed to load submission", nil)
 	}
 
-	return s.mapSubmissionWithGenres(ctx, record)
+	return s.mapSubmissionWithGenresAndMedia(ctx, record)
 }
 
 func (s *Service) UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error) {
@@ -1148,7 +1163,7 @@ func (s *Service) UpdateAdminSubmission(ctx context.Context, userID string, role
 		return SubmissionData{}, sharederrors.Internal("failed to update submission", nil)
 	}
 
-	return s.mapSubmissionWithGenres(ctx, record)
+	return s.mapSubmissionWithGenresAndMedia(ctx, record)
 }
 
 func (s *Service) ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error) {
@@ -1186,7 +1201,7 @@ func (s *Service) ApproveSubmission(ctx context.Context, userID string, role str
 		return SubmissionData{}, sharederrors.Internal("failed to approve submission", nil)
 	}
 
-	return s.mapSubmissionWithGenres(ctx, record)
+	return s.mapSubmissionWithGenresAndMedia(ctx, record)
 }
 
 func (s *Service) RejectSubmission(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error) {
@@ -1229,7 +1244,212 @@ func (s *Service) RejectSubmission(ctx context.Context, userID string, role stri
 		return SubmissionData{}, sharederrors.Internal("failed to reject submission", nil)
 	}
 
-	return s.mapSubmissionWithGenres(ctx, record)
+	return s.mapSubmissionWithGenresAndMedia(ctx, record)
+}
+
+func (s *Service) CreateAdminSubmissionMediaUpload(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+	if !isValidAuthUserID(userID) {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return CreateSubmissionMediaUploadData{}, err
+	}
+
+	if !isValidUUID(playID) {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	if _, err := normalizePlayMediaKind(req.Kind); err != nil {
+		return CreateSubmissionMediaUploadData{}, err
+	}
+
+	contentType, _, err := normalizeImageContentType(req.ContentType)
+	if err != nil {
+		return CreateSubmissionMediaUploadData{}, err
+	}
+
+	if req.ContentLength <= 0 {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("contentLength must be greater than 0", nil)
+	}
+
+	if req.ContentLength > s.maxImageBytes {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Validation("contentLength exceeds max allowed size", nil)
+	}
+
+	if _, err := s.repo.GetSubmissionByID(ctx, playID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return CreateSubmissionMediaUploadData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return CreateSubmissionMediaUploadData{}, sharederrors.Internal("failed to create media upload", nil)
+	}
+
+	objectKey := fmt.Sprintf("plays/%s/%s.webp", playID, uuid.NewString())
+	contentLength := req.ContentLength
+	uploadURL, err := s.mediaStorage.PresignPutObject(ctx, storage.PresignPutObjectInput{
+		ObjectKey:     objectKey,
+		ContentType:   contentType,
+		ContentLength: &contentLength,
+		ExpiresIn:     s.mediaUploadTTL,
+	})
+	if err != nil {
+		return CreateSubmissionMediaUploadData{}, sharederrors.Internal("failed to create media upload", nil)
+	}
+
+	if s.imageQueue != nil && s.optimizeEnabled {
+		_ = s.imageQueue.Enqueue(OptimizeMediaJob{
+			Storage:      s.mediaStorage,
+			ObjectKey:    objectKey,
+			Quality:      s.webpQuality,
+			MaxWidth:     playMediaMaxWidth,
+			MaxHeight:    playMediaMaxHeight,
+			CacheControl: "public, max-age=31536000, immutable",
+		})
+	}
+
+	return CreateSubmissionMediaUploadData{ObjectKey: objectKey, UploadURL: uploadURL}, nil
+}
+
+func (s *Service) AttachAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+	if !isValidAuthUserID(userID) {
+		return PlayMediaData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return PlayMediaData{}, err
+	}
+
+	if !isValidUUID(playID) {
+		return PlayMediaData{}, sharederrors.Validation("invalid playId", nil)
+	}
+
+	kind, err := normalizePlayMediaKind(req.Kind)
+	if err != nil {
+		return PlayMediaData{}, err
+	}
+
+	objectKey := strings.TrimSpace(req.ObjectKey)
+	if objectKey == "" {
+		return PlayMediaData{}, sharederrors.Validation("objectKey must not be empty", nil)
+	}
+
+	if !strings.HasPrefix(objectKey, "plays/"+playID+"/") {
+		return PlayMediaData{}, sharederrors.Validation("objectKey does not belong to this play", nil)
+	}
+
+	sortOrder := 0
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+		if sortOrder < 0 {
+			return PlayMediaData{}, sharederrors.Validation("sortOrder must be greater than or equal to 0", nil)
+		}
+	}
+
+	altText := normalizeOptionalText(req.AltText)
+
+	if _, err := s.repo.GetSubmissionByID(ctx, playID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return PlayMediaData{}, sharederrors.NotFound("submission not found", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	headObject, err := s.mediaStorage.HeadObject(ctx, storage.HeadObjectInput{ObjectKey: objectKey})
+	if err != nil {
+		if storage.IsNotFoundError(err) {
+			return PlayMediaData{}, sharederrors.Validation("uploaded object was not found", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	if _, _, err := normalizeImageContentType(headObject.ContentType); err != nil {
+		return PlayMediaData{}, err
+	}
+
+	if headObject.ContentLength <= 0 || headObject.ContentLength > s.maxImageBytes {
+		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
+	}
+
+	optimizedObjectKey, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
+	if err != nil {
+		return PlayMediaData{}, err
+	}
+
+	record, err := s.repo.CreatePlayMedia(ctx, CreatePlayMediaParams{
+		PlayID:    playID,
+		Kind:      kind,
+		ObjectKey: optimizedObjectKey,
+		AltText:   altText,
+		SortOrder: sortOrder,
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		if isDuplicatedKeyError(err) {
+			return PlayMediaData{}, sharederrors.New(http.StatusConflict, "PLAY_MEDIA_ALREADY_EXISTS", "play media already exists", nil)
+		}
+
+		return PlayMediaData{}, sharederrors.Internal("failed to attach media", nil)
+	}
+
+	presignedURL, presignErr := s.mediaStorage.PresignGetObject(ctx, storage.PresignGetObjectInput{
+		ObjectKey: record.ObjectKey,
+		ExpiresIn: s.mediaDownloadTTL,
+	})
+	if presignErr == nil && presignedURL != "" {
+		return PlayMediaData{
+			ID:        record.ID,
+			Kind:      record.Kind,
+			URL:       presignedURL,
+			AltText:   record.AltText,
+			SortOrder: record.SortOrder,
+		}, nil
+	}
+
+	return mapPlayMediaRecord(playID, record, s.playMediaBaseURL), nil
+}
+
+func (s *Service) DeleteAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, mediaID string) error {
+	if !isValidAuthUserID(userID) {
+		return sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return err
+	}
+
+	if !isValidUUID(playID) {
+		return sharederrors.Validation("invalid playId", nil)
+	}
+
+	if !isValidUUID(mediaID) {
+		return sharederrors.Validation("invalid mediaId", nil)
+	}
+
+	media, err := s.repo.GetPlayMediaByID(ctx, mediaID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("media not found", nil)
+		}
+
+		return sharederrors.Internal("failed to delete media", nil)
+	}
+
+	if media.PlayID != playID {
+		return sharederrors.NotFound("media not found", nil)
+	}
+
+	if err := s.repo.DeletePlayMedia(ctx, mediaID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("media not found", nil)
+		}
+
+		return sharederrors.Internal("failed to delete media", nil)
+	}
+
+	return nil
 }
 
 func (s *Service) SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error) {
@@ -1486,6 +1706,44 @@ func (s *Service) mapSubmissionWithGenres(ctx context.Context, record Submission
 	}
 
 	return mapSubmissionRecord(record, genres), nil
+}
+
+func (s *Service) mapSubmissionWithGenresAndMedia(ctx context.Context, record SubmissionRecord) (SubmissionData, error) {
+	genres, err := s.repo.ListPlayGenres(ctx, record.ID)
+	if err != nil {
+		return SubmissionData{}, sharederrors.Internal("failed to load submission", nil)
+	}
+
+	mediaRecords, err := s.repo.ListPlayMedia(ctx, record.ID)
+	if err != nil {
+		return SubmissionData{}, sharederrors.Internal("failed to load submission media", nil)
+	}
+
+	data := mapSubmissionRecord(record, genres)
+
+	mediaItems := make([]PlayMediaData, 0, len(mediaRecords))
+	for _, item := range mediaRecords {
+		mediaURL := buildPlayMediaURL(s.playMediaBaseURL, record.ID, item.ID)
+
+		presignedURL, presignErr := s.mediaStorage.PresignGetObject(ctx, storage.PresignGetObjectInput{
+			ObjectKey: item.ObjectKey,
+			ExpiresIn: s.mediaDownloadTTL,
+		})
+		if presignErr == nil && presignedURL != "" {
+			mediaURL = presignedURL
+		}
+
+		mediaItems = append(mediaItems, PlayMediaData{
+			ID:        item.ID,
+			Kind:      item.Kind,
+			URL:       mediaURL,
+			AltText:   item.AltText,
+			SortOrder: item.SortOrder,
+		})
+	}
+	data.Media = mediaItems
+
+	return data, nil
 }
 
 func mapSubmissionRecord(record SubmissionRecord, genres []PlayGenreRecord) SubmissionData {
