@@ -1891,6 +1891,69 @@ func (userPlayEngagementEntity) TableName() string {
 	return "app.user_play_engagements"
 }
 
+func (r *Repository) GetPlayMediaByID(ctx context.Context, mediaID string) (PlayMediaRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	mediaUUID, err := parseUUID(mediaID)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	type mediaRowFull struct {
+		ID        uuid.UUID `gorm:"column:id"`
+		Kind      string    `gorm:"column:kind"`
+		ObjectKey string    `gorm:"column:object_key"`
+		AltText   *string   `gorm:"column:alt_text"`
+		SortOrder int       `gorm:"column:sort_order"`
+		PlayID    uuid.UUID `gorm:"column:play_id"`
+	}
+
+	var row mediaRowFull
+	err = r.db.WithContext(ctx).
+		Table("app.play_media").
+		Select("id, kind, object_key, alt_text, sort_order, play_id").
+		Where("id = ?", mediaUUID).
+		Take(&row).Error
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	return PlayMediaRecord{
+		ID:        row.ID.String(),
+		Kind:      row.Kind,
+		ObjectKey: row.ObjectKey,
+		AltText:   row.AltText,
+		SortOrder: row.SortOrder,
+		PlayID:    row.PlayID.String(),
+	}, nil
+}
+
+func (r *Repository) DeletePlayMedia(ctx context.Context, mediaID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	mediaUUID, err := parseUUID(mediaID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).
+		Where("id = ?", mediaUUID).
+		Delete(&playMediaEntity{})
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
 func parseUUID(raw string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(raw)
 	if err != nil {
