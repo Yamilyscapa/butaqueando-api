@@ -38,6 +38,9 @@ type servicePort interface {
 	UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
 	ApproveSubmission(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	RejectSubmission(ctx context.Context, userID string, role string, playID string, req RejectSubmissionRequest) (SubmissionData, error)
+	CreateAdminSubmissionMediaUpload(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	AttachAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
+	DeleteAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, mediaID string) error
 	SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
 	DeleteEngagement(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
 }
@@ -579,6 +582,69 @@ func (h *Handler) RejectSubmission(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) CreateAdminSubmissionMediaUpload(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateSubmissionMediaUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreateAdminSubmissionMediaUpload(c.Request.Context(), userID, role, c.Param("playId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) AttachAdminSubmissionMedia(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req AttachSubmissionMediaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.AttachAdminSubmissionMedia(c.Request.Context(), userID, role, c.Param("playId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) DeleteAdminSubmissionMedia(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	err := h.service.DeleteAdminSubmissionMedia(c.Request.Context(), userID, role, c.Param("playId"), c.Param("mediaId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) CreateSubmissionMediaUpload(c *gin.Context) {

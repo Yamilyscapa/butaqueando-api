@@ -80,6 +80,9 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminSubmissions.PATCH("/plays/:playId", handler.UpdateAdminSubmission)
 	adminSubmissions.POST("/plays/:playId/approve", handler.ApproveSubmission)
 	adminSubmissions.POST("/plays/:playId/reject", handler.RejectSubmission)
+	adminSubmissions.POST("/plays/:playId/media/uploads", handler.CreateAdminSubmissionMediaUpload)
+	adminSubmissions.POST("/plays/:playId/media", handler.AttachAdminSubmissionMedia)
+	adminSubmissions.DELETE("/plays/:playId/media/:mediaId", handler.DeleteAdminSubmissionMedia)
 
 	adminGenres := v1.Group("/admin/genres")
 	adminGenres.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
