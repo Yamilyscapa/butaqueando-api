@@ -1078,6 +1078,135 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/admin/submissions/plays/{playId}/media/uploads:
+    post:
+      tags: [plays]
+      summary: Create presigned upload URL for admin submission media
+      description: Admin-only. Generate a presigned URL to upload media for a submission, regardless of curation status.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionMediaUploadRequest'
+      responses:
+        '201':
+          description: Upload URL created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionMediaUploadSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/submissions/plays/{playId}/media:
+    post:
+      tags: [plays]
+      summary: Attach media to admin submission
+      description: Admin-only. Attach uploaded media to a submission, regardless of curation status. Images are optimized to WebP.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachSubmissionMediaRequest'
+      responses:
+        '201':
+          description: Submission media attached
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayMediaSuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/PlayMediaAlreadyExists'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/submissions/plays/{playId}/media/{mediaId}:
+    delete:
+      tags: [plays]
+      summary: Remove media from admin submission
+      description: Admin-only. Delete a media item from a submission by its ID. The S3 object is not deleted.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - name: playId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Media deleted
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/admin/genres:
     get:
       tags: [plays]
@@ -3010,6 +3139,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlayGenreData'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayMediaData'
+          description: Play media items. Only included in admin submission detail and mutation responses.
         curationStatus:
           type: string
           enum: [pending, published, rejected]
