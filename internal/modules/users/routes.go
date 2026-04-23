@@ -43,4 +43,5 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	me.GET("/profile", handler.GetMe)
 	me.PATCH("/profile", handler.UpdateMe)
 	me.POST("/profile/avatar/uploads", handler.CreateAvatarUpload)
+	me.POST("/account-deletion-requests", handler.CreateAccountDeletionRequest)
 }

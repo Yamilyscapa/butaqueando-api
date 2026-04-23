@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -202,6 +203,56 @@ func (r *Repository) UpdateMeProfile(ctx context.Context, userID string, patch U
 	return r.GetMeProfile(ctx, userID)
 }
 
+func (r *Repository) CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return AccountDeletionRequestRecord{}, err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return AccountDeletionRequestRecord{}, err
+	}
+
+	var user userEntity
+	if err := r.db.WithContext(ctx).Where("id = ?", userUUID).Take(&user).Error; err != nil {
+		return AccountDeletionRequestRecord{}, err
+	}
+
+	var existing accountDeletionRequestEntity
+	err = r.db.WithContext(ctx).
+		Where("user_id = ? AND status = ?", userUUID, "pending").
+		Order("requested_at DESC").
+		Take(&existing).Error
+	if err == nil {
+		return AccountDeletionRequestRecord{
+			ID:          existing.ID.String(),
+			Status:      existing.Status,
+			RequestedAt: existing.RequestedAt.Format(time.RFC3339),
+		}, nil
+	}
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return AccountDeletionRequestRecord{}, err
+	}
+
+	now := time.Now().UTC()
+	request := accountDeletionRequestEntity{
+		UserID:      userUUID,
+		Status:      "pending",
+		RequestedAt: now,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&request).Error; err != nil {
+		return AccountDeletionRequestRecord{}, err
+	}
+
+	return AccountDeletionRequestRecord{
+		ID:          request.ID.String(),
+		Status:      request.Status,
+		RequestedAt: request.RequestedAt.Format(time.RFC3339),
+	}, nil
+}
+
 func (r *Repository) countFollowers(ctx context.Context, userID uuid.UUID) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
@@ -272,6 +323,21 @@ func (userProfileEntity) TableName() string {
 type userFollowEntity struct {
 	FollowerUserID  uuid.UUID `gorm:"column:follower_user_id;type:uuid"`
 	FollowingUserID uuid.UUID `gorm:"column:following_user_id;type:uuid"`
+}
+
+type accountDeletionRequestEntity struct {
+	ID          uuid.UUID  `gorm:"column:id;type:uuid;primaryKey"`
+	UserID      uuid.UUID  `gorm:"column:user_id;type:uuid"`
+	Status      string     `gorm:"column:status"`
+	Reason      *string    `gorm:"column:reason"`
+	RequestedAt time.Time  `gorm:"column:requested_at"`
+	ProcessedAt *time.Time `gorm:"column:processed_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at"`
+}
+
+func (accountDeletionRequestEntity) TableName() string {
+	return "app.account_deletion_requests"
 }
 
 func (userFollowEntity) TableName() string {

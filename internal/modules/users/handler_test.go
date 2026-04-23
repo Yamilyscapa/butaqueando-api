@@ -18,6 +18,7 @@ type fakeService struct {
 	getMeProfileFn       func(ctx context.Context, userID string) (MeProfileData, error)
 	updateMeProfileFn    func(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
 	createAvatarUploadFn func(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error)
+	createDeletionReqFn  func(ctx context.Context, userID string) (AccountDeletionRequestData, error)
 }
 
 func (f *fakeService) GetPublicProfile(ctx context.Context, userID string) (PublicProfileData, error) {
@@ -50,6 +51,14 @@ func (f *fakeService) CreateAvatarUpload(ctx context.Context, userID string, req
 	}
 
 	return CreateAvatarUploadData{}, nil
+}
+
+func (f *fakeService) CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestData, error) {
+	if f.createDeletionReqFn != nil {
+		return f.createDeletionReqFn(ctx, userID)
+	}
+
+	return AccountDeletionRequestData{}, nil
 }
 
 func TestHandlerGetMeUnauthorizedWithoutToken(t *testing.T) {
@@ -223,5 +232,41 @@ func TestHandlerCreateAvatarUploadSuccess(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerCreateAccountDeletionRequestSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{createDeletionReqFn: func(ctx context.Context, userID string) (AccountDeletionRequestData, error) {
+		return AccountDeletionRequestData{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Status:      "pending",
+			RequestedAt: "2026-01-01T00:00:00Z",
+		}, nil
+	}})
+	router.POST("/v1/me/account-deletion-requests", handler.CreateAccountDeletionRequest)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/me/account-deletion-requests", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var response httpx.ResponseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if response.Error != nil {
+		t.Fatalf("expected no error payload")
 	}
 }

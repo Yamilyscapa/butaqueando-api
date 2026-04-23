@@ -9,6 +9,7 @@
 \ir tables/user_refresh_tokens.sql
 \ir tables/password_reset_tokens.sql
 \ir tables/email_verification_tokens.sql
+\ir tables/account_deletion_requests.sql
 
 \ir tables/plays.sql
 \ir tables/genres.sql
@@ -38,6 +39,7 @@
 \ir indexes/user_refresh_tokens.sql
 \ir indexes/password_reset_tokens.sql
 \ir indexes/email_verification_tokens.sql
+\ir indexes/account_deletion_requests.sql
 
 \ir views/play_rating_stats.sql
 \ir views/user_genre_stats.sql

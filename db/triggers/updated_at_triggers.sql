@@ -33,3 +33,9 @@ CREATE TRIGGER trg_user_refresh_tokens_updated_at
 BEFORE UPDATE ON app.user_refresh_tokens
 FOR EACH ROW
 EXECUTE FUNCTION app.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_account_deletion_requests_updated_at ON app.account_deletion_requests;
+CREATE TRIGGER trg_account_deletion_requests_updated_at
+BEFORE UPDATE ON app.account_deletion_requests
+FOR EACH ROW
+EXECUTE FUNCTION app.set_updated_at();

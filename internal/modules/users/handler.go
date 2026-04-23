@@ -15,6 +15,7 @@ type servicePort interface {
 	GetMeProfile(ctx context.Context, userID string) (MeProfileData, error)
 	UpdateMeProfile(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
 	CreateAvatarUpload(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error)
+	CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestData, error)
 }
 
 type Handler struct {
@@ -98,6 +99,22 @@ func (h *Handler) CreateAvatarUpload(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) CreateAccountDeletionRequest(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	data, err := h.service.CreateAccountDeletionRequest(c.Request.Context(), userID)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) notImplemented(c *gin.Context) {

@@ -28,6 +28,7 @@ type repositoryPort interface {
 	GetPublicProfile(ctx context.Context, userID string) (PublicProfileRecord, error)
 	GetMeProfile(ctx context.Context, userID string) (MeProfileRecord, error)
 	UpdateMeProfile(ctx context.Context, userID string, patch UpdateMeProfilePatch) (MeProfileRecord, error)
+	CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestRecord, error)
 }
 
 type Service struct {
@@ -299,6 +300,27 @@ func (s *Service) CreateAvatarUpload(ctx context.Context, userID string, req Cre
 	return CreateAvatarUploadData{ObjectKey: objectKey, UploadURL: uploadURL}, nil
 }
 
+func (s *Service) CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestData, error) {
+	if strings.TrimSpace(userID) == "" {
+		return AccountDeletionRequestData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if !isValidUUID(userID) {
+		return AccountDeletionRequestData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	record, err := s.repo.CreateAccountDeletionRequest(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return AccountDeletionRequestData{}, sharederrors.NotFound("user profile not found", nil)
+		}
+
+		return AccountDeletionRequestData{}, sharederrors.Internal("failed to create account deletion request", nil)
+	}
+
+	return mapAccountDeletionRequestRecord(record), nil
+}
+
 func validateAndBuildPatch(req UpdateMeProfileRequest) (UpdateMeProfilePatch, error) {
 	patch := UpdateMeProfilePatch{}
 
@@ -426,6 +448,14 @@ func mapPublicProfileRecord(record PublicProfileRecord, userMediaBaseURL string)
 			WatchedCount:   record.WatchedCount,
 			ReviewsCount:   record.ReviewsCount,
 		},
+	}
+}
+
+func mapAccountDeletionRequestRecord(record AccountDeletionRequestRecord) AccountDeletionRequestData {
+	return AccountDeletionRequestData{
+		ID:          record.ID,
+		Status:      record.Status,
+		RequestedAt: record.RequestedAt,
 	}
 }
 

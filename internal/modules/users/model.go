@@ -43,6 +43,12 @@ type CreateAvatarUploadData struct {
 	UploadURL string `json:"uploadUrl"`
 }
 
+type AccountDeletionRequestData struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	RequestedAt string `json:"requestedAt"`
+}
+
 type UpdateMeProfilePatch struct {
 	DisplayNameSet     bool
 	DisplayName        *string
@@ -76,4 +82,10 @@ type PublicProfileRecord struct {
 	FollowingCount  int64
 	WatchedCount    int64
 	ReviewsCount    int64
+}
+
+type AccountDeletionRequestRecord struct {
+	ID          string
+	Status      string
+	RequestedAt string
 }

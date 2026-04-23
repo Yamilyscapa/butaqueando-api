@@ -19,6 +19,7 @@ type fakeRepository struct {
 	getPublicProfileFn func(ctx context.Context, userID string) (PublicProfileRecord, error)
 	getMeProfileFn     func(ctx context.Context, userID string) (MeProfileRecord, error)
 	updateMeProfileFn  func(ctx context.Context, userID string, patch UpdateMeProfilePatch) (MeProfileRecord, error)
+	createDeletionFn   func(ctx context.Context, userID string) (AccountDeletionRequestRecord, error)
 }
 
 type fakeStorage struct {
@@ -90,6 +91,14 @@ func (f *fakeRepository) UpdateMeProfile(ctx context.Context, userID string, pat
 	}
 
 	return MeProfileRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestRecord, error) {
+	if f.createDeletionFn != nil {
+		return f.createDeletionFn(ctx, userID)
+	}
+
+	return AccountDeletionRequestRecord{}, gorm.ErrRecordNotFound
 }
 
 func TestServiceGetMeProfileSuccess(t *testing.T) {
@@ -277,5 +286,45 @@ func TestServiceUpdateMeProfileOptimizesAvatarAndNormalizesKey(t *testing.T) {
 
 	if profile.AvatarVersion == nil || *profile.AvatarVersion == "" {
 		t.Fatalf("expected avatar version to be present")
+	}
+}
+
+func TestServiceCreateAccountDeletionRequestSuccess(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{createDeletionFn: func(ctx context.Context, userID string) (AccountDeletionRequestRecord, error) {
+		return AccountDeletionRequestRecord{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Status:      "pending",
+			RequestedAt: "2026-01-01T00:00:00Z",
+		}, nil
+	}})
+
+	data, err := service.CreateAccountDeletionRequest(context.Background(), "00000000-0000-0000-0000-000000000002")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if data.Status != "pending" {
+		t.Fatalf("expected pending status, got %q", data.Status)
+	}
+}
+
+func TestServiceCreateAccountDeletionRequestUnauthorizedWithInvalidUserID(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	_, err := service.CreateAccountDeletionRequest(context.Background(), "not-a-uuid")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "UNAUTHORIZED" {
+		t.Fatalf("expected UNAUTHORIZED, got %q", appErr.Code)
 	}
 }
