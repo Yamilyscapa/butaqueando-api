@@ -29,6 +29,14 @@ type servicePort interface {
 	ListMyReviews(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	ListMySubmissions(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	UpdateMySubmission(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
+	ListMyOwnedPlays(ctx context.Context, userID string, query ListOwnedPlaysQuery) (OwnedPlayListData, error)
+	CreatePlayEditSuggestion(ctx context.Context, userID string, req CreatePlayEditSuggestionRequest) (PlayEditSuggestionData, error)
+	ListMyPlayEditSuggestions(ctx context.Context, userID string, query ListPlayEditSuggestionsQuery) (PlayEditSuggestionListData, error)
+	GetMyPlayEditSuggestionByID(ctx context.Context, userID string, suggestionID string) (PlayEditSuggestionData, error)
+	UpdateMyPlayEditSuggestion(ctx context.Context, userID string, suggestionID string, req UpdatePlayEditSuggestionRequest) (PlayEditSuggestionData, error)
+	CreatePlayEditSuggestionMediaUpload(ctx context.Context, userID string, suggestionID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
+	AttachPlayEditSuggestionMedia(ctx context.Context, userID string, suggestionID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
+	DeleteMyPlayEditSuggestionMedia(ctx context.Context, userID string, suggestionID string, mediaID string) error
 	ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
 	CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
 	DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error
@@ -41,6 +49,10 @@ type servicePort interface {
 	CreateAdminSubmissionMediaUpload(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
 	AttachAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
 	DeleteAdminSubmissionMedia(ctx context.Context, userID string, role string, playID string, mediaID string) error
+	ListAdminModerationQueue(ctx context.Context, userID string, role string, query ListModerationQueueQuery) (ModerationQueueData, error)
+	GetAdminPlayEditSuggestionByID(ctx context.Context, userID string, role string, suggestionID string) (PlayEditSuggestionData, error)
+	ApprovePlayEditSuggestion(ctx context.Context, userID string, role string, suggestionID string) (PlayEditSuggestionData, error)
+	RejectPlayEditSuggestion(ctx context.Context, userID string, role string, suggestionID string, req RejectSubmissionRequest) (PlayEditSuggestionData, error)
 	SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
 	DeleteEngagement(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
 }
@@ -418,6 +430,169 @@ func (h *Handler) UpdateMySubmission(c *gin.Context) {
 	httpx.WriteData(c, http.StatusOK, data)
 }
 
+func (h *Handler) ListMyOwnedPlays(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListOwnedPlaysQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyOwnedPlays(c.Request.Context(), userID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) CreatePlayEditSuggestion(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreatePlayEditSuggestionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreatePlayEditSuggestion(c.Request.Context(), userID, req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) ListMyPlayEditSuggestions(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListPlayEditSuggestionsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyPlayEditSuggestions(c.Request.Context(), userID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) GetMyPlayEditSuggestionByID(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	data, err := h.service.GetMyPlayEditSuggestionByID(c.Request.Context(), userID, c.Param("suggestionId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) UpdateMyPlayEditSuggestion(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req UpdatePlayEditSuggestionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.UpdateMyPlayEditSuggestion(c.Request.Context(), userID, c.Param("suggestionId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) CreatePlayEditSuggestionMediaUpload(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateSubmissionMediaUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreatePlayEditSuggestionMediaUpload(c.Request.Context(), userID, c.Param("suggestionId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) AttachPlayEditSuggestionMedia(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req AttachSubmissionMediaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.AttachPlayEditSuggestionMedia(c.Request.Context(), userID, c.Param("suggestionId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) DeleteMyPlayEditSuggestionMedia(c *gin.Context) {
+	userID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	if err := h.service.DeleteMyPlayEditSuggestionMedia(c.Request.Context(), userID, c.Param("suggestionId"), c.Param("mediaId")); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) ListAdminGenres(c *gin.Context) {
 	userID, userOK := middleware.GetAuthenticatedUserID(c)
 	role, roleOK := middleware.GetAuthenticatedRole(c)
@@ -645,6 +820,86 @@ func (h *Handler) DeleteAdminSubmissionMedia(c *gin.Context) {
 	}
 
 	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) ListAdminModerationQueue(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListModerationQueueQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListAdminModerationQueue(c.Request.Context(), userID, role, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) GetAdminPlayEditSuggestionByID(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	data, err := h.service.GetAdminPlayEditSuggestionByID(c.Request.Context(), userID, role, c.Param("suggestionId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) ApprovePlayEditSuggestion(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	data, err := h.service.ApprovePlayEditSuggestion(c.Request.Context(), userID, role, c.Param("suggestionId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
+}
+
+func (h *Handler) RejectPlayEditSuggestion(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req RejectSubmissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.RejectPlayEditSuggestion(c.Request.Context(), userID, role, c.Param("suggestionId"), req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) CreateSubmissionMediaUpload(c *gin.Context) {

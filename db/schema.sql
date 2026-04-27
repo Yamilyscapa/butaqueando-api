@@ -16,6 +16,9 @@
 \ir tables/play_genres.sql
 \ir tables/play_cast_members.sql
 \ir tables/play_media.sql
+\ir tables/play_edit_suggestions.sql
+\ir tables/play_edit_suggestion_genres.sql
+\ir tables/play_edit_suggestion_media.sql
 \ir tables/reviews.sql
 \ir tables/review_comments.sql
 \ir tables/user_play_engagements.sql
@@ -31,6 +34,7 @@
 \ir indexes/plays.sql
 \ir indexes/play_genres.sql
 \ir indexes/play_cast_members.sql
+\ir indexes/play_edit_suggestions.sql
 \ir indexes/reviews.sql
 \ir indexes/review_comments.sql
 \ir indexes/user_play_engagements.sql

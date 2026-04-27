@@ -24,6 +24,16 @@ BEGIN
     SELECT 1
     FROM pg_type t
     JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'play_edit_suggestion_status'
+      AND n.nspname = 'app'
+  ) THEN
+    CREATE TYPE app.play_edit_suggestion_status AS ENUM ('pending', 'approved', 'rejected');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
     WHERE t.typname = 'media_kind'
       AND n.nspname = 'app'
   ) THEN

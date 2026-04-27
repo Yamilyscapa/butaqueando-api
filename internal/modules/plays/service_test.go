@@ -62,6 +62,8 @@ type fakeRepository struct {
 	createGenreFn          func(ctx context.Context, name string) (GenreRecord, error)
 	deleteGenreFn          func(ctx context.Context, genreID string) error
 	listAdminSubmissionsFn func(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error)
+	listOwnedPlaysFn       func(ctx context.Context, userID string, params ListSubmissionsParams) ([]OwnedPlayRecord, error)
+	listEditSuggestionsFn  func(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error)
 	approveSubmissionFn    func(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error)
 	rejectSubmissionFn     func(ctx context.Context, playID string, adminUserID string, reason string, now time.Time) (SubmissionRecord, error)
 	createPlayMediaFn      func(ctx context.Context, params CreatePlayMediaParams) (PlayMediaRecord, error)
@@ -263,6 +265,74 @@ func (f *fakeRepository) ListAdminSubmissions(ctx context.Context, params ListSu
 	}
 
 	return nil, nil
+}
+
+func (f *fakeRepository) ListOwnedPublishedPlays(ctx context.Context, userID string, params ListSubmissionsParams) ([]OwnedPlayRecord, error) {
+	if f.listOwnedPlaysFn != nil {
+		return f.listOwnedPlaysFn(ctx, userID, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) GetOwnedPublishedPlayByID(ctx context.Context, playID string, userID string) (OwnedPlayRecord, error) {
+	return OwnedPlayRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) ListPlayEditSuggestions(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error) {
+	if f.listEditSuggestionsFn != nil {
+		return f.listEditSuggestionsFn(ctx, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) GetPlayEditSuggestionByID(ctx context.Context, suggestionID string) (PlayEditSuggestionRecord, error) {
+	return PlayEditSuggestionRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) CreatePlayEditSuggestion(ctx context.Context, params CreatePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	return PlayEditSuggestionRecord{}, nil
+}
+
+func (f *fakeRepository) UpdatePlayEditSuggestion(ctx context.Context, suggestionID string, params UpdatePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	return PlayEditSuggestionRecord{}, nil
+}
+
+func (f *fakeRepository) ModeratePlayEditSuggestion(ctx context.Context, suggestionID string, params ModeratePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	return PlayEditSuggestionRecord{}, nil
+}
+
+func (f *fakeRepository) ReplacePlayEditSuggestionMedia(ctx context.Context, suggestionID string, media []CreatePlayMediaParams) error {
+	return nil
+}
+
+func (f *fakeRepository) ListPlayEditSuggestionGenres(ctx context.Context, suggestionID string) ([]PlayGenreRecord, error) {
+	return []PlayGenreRecord{}, nil
+}
+
+func (f *fakeRepository) ListPlayEditSuggestionMedia(ctx context.Context, suggestionID string) ([]PlayMediaRecord, error) {
+	return []PlayMediaRecord{}, nil
+}
+
+func (f *fakeRepository) ReplacePlayEditSuggestionGenres(ctx context.Context, suggestionID string, genreIDs []string) error {
+	return nil
+}
+
+func (f *fakeRepository) CreatePlayEditSuggestionMedia(ctx context.Context, suggestionID string, params CreatePlayMediaParams) (PlayMediaRecord, error) {
+	return PlayMediaRecord{}, nil
+}
+
+func (f *fakeRepository) GetPlayEditSuggestionMediaByID(ctx context.Context, mediaID string) (PlayMediaRecord, error) {
+	return PlayMediaRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) DeletePlayEditSuggestionMedia(ctx context.Context, mediaID string) error {
+	return nil
+}
+
+func (f *fakeRepository) ApplyApprovedPlayEditSuggestion(ctx context.Context, suggestionID string, updatedAt time.Time) error {
+	return nil
 }
 
 func (f *fakeRepository) ApproveSubmission(ctx context.Context, playID string, adminUserID string, now time.Time) (SubmissionRecord, error) {
@@ -1493,5 +1563,196 @@ func TestServiceRejectSubmissionRequiresReason(t *testing.T) {
 
 	if appErr.Code != "VALIDATION_ERROR" {
 		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceListMyOwnedPlaysIncludesPosterURLAndPendingSuggestion(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	userID := "00000000-0000-0000-0000-000000000001"
+	playID := "00000000-0000-0000-0000-000000000111"
+	posterID := "00000000-0000-0000-0000-000000000222"
+	suggestionID := "00000000-0000-0000-0000-000000000333"
+
+	svc := NewService(&fakeRepository{
+		listOwnedPlaysFn: func(ctx context.Context, uid string, params ListSubmissionsParams) ([]OwnedPlayRecord, error) {
+			if uid != userID {
+				t.Fatalf("expected userID %q, got %q", userID, uid)
+			}
+
+			return []OwnedPlayRecord{
+				{
+					ID:                 playID,
+					Title:              "Play A",
+					TheaterName:        "Theater A",
+					AvailabilityStatus: "in_theaters",
+					PublishedAt:        now,
+					PosterMediaID:      &posterID,
+					CreatedAt:          now,
+				},
+			}, nil
+		},
+		listEditSuggestionsFn: func(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error) {
+			if params.Status == nil || *params.Status != "pending" {
+				t.Fatalf("expected pending status filter for first lookup")
+			}
+
+			return []PlayEditSuggestionRecord{
+				{
+					ID:                 suggestionID,
+					PlayID:             playID,
+					Title:              "Play A v2",
+					Synopsis:           "s",
+					Director:           "d",
+					DurationMinutes:    90,
+					TheaterName:        "Theater A",
+					AvailabilityStatus: "in_theaters",
+					Status:             "pending",
+					CreatedByUserID:    userID,
+					CreatedAt:          now,
+					UpdatedAt:          now,
+				},
+			}, nil
+		},
+	})
+
+	result, err := svc.ListMyOwnedPlays(context.Background(), userID, ListOwnedPlaysQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+
+	item := result.Items[0]
+	if item.PosterURL == nil {
+		t.Fatalf("expected posterUrl to be present")
+	}
+	if !strings.HasSuffix(*item.PosterURL, "/v1/media/plays/"+playID+"/"+posterID) {
+		t.Fatalf("unexpected posterUrl: %q", *item.PosterURL)
+	}
+	if item.LatestEditSuggestion == nil {
+		t.Fatalf("expected latestEditSuggestion to be present")
+	}
+	if item.LatestEditSuggestion.ID != suggestionID {
+		t.Fatalf("expected suggestion %q, got %q", suggestionID, item.LatestEditSuggestion.ID)
+	}
+	if item.LatestEditSuggestion.Status != "pending" {
+		t.Fatalf("expected pending suggestion status, got %q", item.LatestEditSuggestion.Status)
+	}
+}
+
+func TestServiceListMyOwnedPlaysPosterURLNilWhenNoMedia(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	userID := "00000000-0000-0000-0000-000000000001"
+	playID := "00000000-0000-0000-0000-000000000111"
+
+	svc := NewService(&fakeRepository{
+		listOwnedPlaysFn: func(ctx context.Context, uid string, params ListSubmissionsParams) ([]OwnedPlayRecord, error) {
+			return []OwnedPlayRecord{
+				{
+					ID:                 playID,
+					Title:              "Play A",
+					TheaterName:        "Theater A",
+					AvailabilityStatus: "in_theaters",
+					PublishedAt:        now,
+					PosterMediaID:      nil,
+					CreatedAt:          now,
+				},
+			}, nil
+		},
+		listEditSuggestionsFn: func(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error) {
+			return nil, nil
+		},
+	})
+
+	result, err := svc.ListMyOwnedPlays(context.Background(), userID, ListOwnedPlaysQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].PosterURL != nil {
+		t.Fatalf("expected posterUrl to be nil when there is no media")
+	}
+}
+
+func TestServiceListMyOwnedPlaysFallsBackToLatestSuggestionWhenNoPending(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	userID := "00000000-0000-0000-0000-000000000001"
+	playID := "00000000-0000-0000-0000-000000000111"
+	approvedSuggestionID := "00000000-0000-0000-0000-000000000444"
+
+	suggestionsCalls := 0
+	svc := NewService(&fakeRepository{
+		listOwnedPlaysFn: func(ctx context.Context, uid string, params ListSubmissionsParams) ([]OwnedPlayRecord, error) {
+			return []OwnedPlayRecord{
+				{
+					ID:                 playID,
+					Title:              "Play A",
+					TheaterName:        "Theater A",
+					AvailabilityStatus: "in_theaters",
+					PublishedAt:        now,
+					CreatedAt:          now,
+				},
+			}, nil
+		},
+		listEditSuggestionsFn: func(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error) {
+			suggestionsCalls++
+
+			if params.Status != nil && *params.Status == "pending" {
+				return []PlayEditSuggestionRecord{}, nil
+			}
+
+			if params.Status != nil {
+				t.Fatalf("unexpected status filter: %q", *params.Status)
+			}
+
+			return []PlayEditSuggestionRecord{
+				{
+					ID:                 approvedSuggestionID,
+					PlayID:             playID,
+					Title:              "Play A approved edit",
+					Synopsis:           "s",
+					Director:           "d",
+					DurationMinutes:    90,
+					TheaterName:        "Theater A",
+					AvailabilityStatus: "in_theaters",
+					Status:             "approved",
+					CreatedByUserID:    userID,
+					CreatedAt:          now,
+					UpdatedAt:          now,
+				},
+			}, nil
+		},
+	})
+
+	result, err := svc.ListMyOwnedPlays(context.Background(), userID, ListOwnedPlaysQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if suggestionsCalls != 2 {
+		t.Fatalf("expected 2 suggestion lookups (pending + fallback), got %d", suggestionsCalls)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].LatestEditSuggestion == nil {
+		t.Fatalf("expected fallback latest suggestion to be set")
+	}
+	if result.Items[0].LatestEditSuggestion.ID != approvedSuggestionID {
+		t.Fatalf("expected fallback suggestion %q, got %q", approvedSuggestionID, result.Items[0].LatestEditSuggestion.ID)
+	}
+	if result.Items[0].LatestEditSuggestion.Status != "approved" {
+		t.Fatalf("expected approved fallback status, got %q", result.Items[0].LatestEditSuggestion.Status)
 	}
 }

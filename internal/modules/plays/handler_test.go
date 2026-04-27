@@ -44,6 +44,7 @@ type fakeService struct {
 	createAdminSubMediaUploadFn func(ctx context.Context, userID string, role string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
 	attachAdminSubMediaFn       func(ctx context.Context, userID string, role string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
 	deleteAdminSubMediaFn       func(ctx context.Context, userID string, role string, playID string, mediaID string) error
+	listMyOwnedPlaysFn          func(ctx context.Context, userID string, query ListOwnedPlaysQuery) (OwnedPlayListData, error)
 	setEngagementFn             func(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error)
 	deleteEngageFn              func(ctx context.Context, userID string, playID string, kind string) (EngagementStateData, error)
 }
@@ -288,6 +289,58 @@ func (f *fakeService) DeleteAdminSubmissionMedia(ctx context.Context, userID str
 	return nil
 }
 
+func (f *fakeService) ListMyOwnedPlays(ctx context.Context, userID string, query ListOwnedPlaysQuery) (OwnedPlayListData, error) {
+	if f.listMyOwnedPlaysFn != nil {
+		return f.listMyOwnedPlaysFn(ctx, userID, query)
+	}
+
+	return OwnedPlayListData{}, nil
+}
+
+func (f *fakeService) CreatePlayEditSuggestion(ctx context.Context, userID string, req CreatePlayEditSuggestionRequest) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
+func (f *fakeService) ListMyPlayEditSuggestions(ctx context.Context, userID string, query ListPlayEditSuggestionsQuery) (PlayEditSuggestionListData, error) {
+	return PlayEditSuggestionListData{}, nil
+}
+
+func (f *fakeService) GetMyPlayEditSuggestionByID(ctx context.Context, userID string, suggestionID string) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
+func (f *fakeService) UpdateMyPlayEditSuggestion(ctx context.Context, userID string, suggestionID string, req UpdatePlayEditSuggestionRequest) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
+func (f *fakeService) CreatePlayEditSuggestionMediaUpload(ctx context.Context, userID string, suggestionID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error) {
+	return CreateSubmissionMediaUploadData{}, nil
+}
+
+func (f *fakeService) AttachPlayEditSuggestionMedia(ctx context.Context, userID string, suggestionID string, req AttachSubmissionMediaRequest) (PlayMediaData, error) {
+	return PlayMediaData{}, nil
+}
+
+func (f *fakeService) DeleteMyPlayEditSuggestionMedia(ctx context.Context, userID string, suggestionID string, mediaID string) error {
+	return nil
+}
+
+func (f *fakeService) ListAdminModerationQueue(ctx context.Context, userID string, role string, query ListModerationQueueQuery) (ModerationQueueData, error) {
+	return ModerationQueueData{}, nil
+}
+
+func (f *fakeService) GetAdminPlayEditSuggestionByID(ctx context.Context, userID string, role string, suggestionID string) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
+func (f *fakeService) ApprovePlayEditSuggestion(ctx context.Context, userID string, role string, suggestionID string) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
+func (f *fakeService) RejectPlayEditSuggestion(ctx context.Context, userID string, role string, suggestionID string, req RejectSubmissionRequest) (PlayEditSuggestionData, error) {
+	return PlayEditSuggestionData{}, nil
+}
+
 func (f *fakeService) SetEngagement(ctx context.Context, userID string, playID string, req SetEngagementRequest) (EngagementStateData, error) {
 	if f.setEngagementFn != nil {
 		return f.setEngagementFn(ctx, userID, playID, req)
@@ -474,6 +527,68 @@ func TestHandlerCreateReviewSuccess(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
+	}
+}
+
+func TestHandlerListMyOwnedPlaysIncludesPosterURL(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000002", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{
+		listMyOwnedPlaysFn: func(ctx context.Context, userID string, query ListOwnedPlaysQuery) (OwnedPlayListData, error) {
+			posterURL := "/v1/media/plays/00000000-0000-0000-0000-000000000201/00000000-0000-0000-0000-000000000401"
+
+			return OwnedPlayListData{
+				Items: []OwnedPlayData{
+					{
+						ID:                 "00000000-0000-0000-0000-000000000201",
+						Title:              "Hamlet",
+						TheaterName:        "San Martin",
+						AvailabilityStatus: "in_theaters",
+						PublishedAt:        "2026-01-01T00:00:00Z",
+						PosterURL:          &posterURL,
+					},
+				},
+			}, nil
+		},
+	})
+	router.GET("/v1/me/plays/owned", handler.ListMyOwnedPlays)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/plays/owned?limit=10", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var response struct {
+		Data struct {
+			Items []struct {
+				PosterURL *string `json:"posterUrl"`
+			} `json:"items"`
+		} `json:"data"`
+		Error *httpx.ErrorResponse `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if response.Error != nil {
+		t.Fatalf("expected no error payload")
+	}
+
+	if len(response.Data.Items) != 1 {
+		t.Fatalf("expected one owned play item")
+	}
+
+	if response.Data.Items[0].PosterURL == nil || *response.Data.Items[0].PosterURL == "" {
+		t.Fatalf("expected posterUrl in response")
 	}
 }
 

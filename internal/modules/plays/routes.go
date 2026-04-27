@@ -73,6 +73,20 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	mySubmissions.POST("/plays/:playId/media/uploads", handler.CreateSubmissionMediaUpload)
 	mySubmissions.POST("/plays/:playId/media", handler.AttachSubmissionMedia)
 
+	myOwnedPlays := v1.Group("/me/plays")
+	myOwnedPlays.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	myOwnedPlays.GET("/owned", handler.ListMyOwnedPlays)
+
+	myEditSuggestions := v1.Group("/me/play-edit-suggestions")
+	myEditSuggestions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	myEditSuggestions.POST("", handler.CreatePlayEditSuggestion)
+	myEditSuggestions.GET("", handler.ListMyPlayEditSuggestions)
+	myEditSuggestions.GET("/:suggestionId", handler.GetMyPlayEditSuggestionByID)
+	myEditSuggestions.PATCH("/:suggestionId", handler.UpdateMyPlayEditSuggestion)
+	myEditSuggestions.POST("/:suggestionId/media/uploads", handler.CreatePlayEditSuggestionMediaUpload)
+	myEditSuggestions.POST("/:suggestionId/media", handler.AttachPlayEditSuggestionMedia)
+	myEditSuggestions.DELETE("/:suggestionId/media/:mediaId", handler.DeleteMyPlayEditSuggestionMedia)
+
 	adminSubmissions := v1.Group("/admin/submissions")
 	adminSubmissions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	adminSubmissions.GET("/plays", handler.ListAdminSubmissions)
@@ -83,6 +97,16 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminSubmissions.POST("/plays/:playId/media/uploads", handler.CreateAdminSubmissionMediaUpload)
 	adminSubmissions.POST("/plays/:playId/media", handler.AttachAdminSubmissionMedia)
 	adminSubmissions.DELETE("/plays/:playId/media/:mediaId", handler.DeleteAdminSubmissionMedia)
+
+	adminModeration := v1.Group("/admin/moderation")
+	adminModeration.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminModeration.GET("/queue", handler.ListAdminModerationQueue)
+
+	adminEditSuggestions := v1.Group("/admin/play-edit-suggestions")
+	adminEditSuggestions.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminEditSuggestions.GET("/:suggestionId", handler.GetAdminPlayEditSuggestionByID)
+	adminEditSuggestions.POST("/:suggestionId/approve", handler.ApprovePlayEditSuggestion)
+	adminEditSuggestions.POST("/:suggestionId/reject", handler.RejectPlayEditSuggestion)
 
 	adminGenres := v1.Group("/admin/genres")
 	adminGenres.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

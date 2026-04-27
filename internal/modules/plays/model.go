@@ -51,6 +51,22 @@ type ListUserReviewsQuery struct {
 	Limit  int    `form:"limit"`
 }
 
+type ListOwnedPlaysQuery struct {
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
+type ListPlayEditSuggestionsQuery struct {
+	Status string `form:"status"`
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
+type ListModerationQueueQuery struct {
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
 type CreateReviewRequest struct {
 	Rating           int     `json:"rating"`
 	Title            *string `json:"title"`
@@ -105,6 +121,29 @@ type UpdateSubmissionRequest struct {
 	TheaterName        *string `json:"theaterName"`
 	City               *string `json:"city"`
 	AvailabilityStatus *string `json:"availabilityStatus"`
+}
+
+type CreatePlayEditSuggestionRequest struct {
+	PlayID             string   `json:"playId"`
+	Title              *string  `json:"title"`
+	Synopsis           *string  `json:"synopsis"`
+	Director           *string  `json:"director"`
+	DurationMinutes    *int     `json:"durationMinutes"`
+	TheaterName        *string  `json:"theaterName"`
+	City               *string  `json:"city"`
+	AvailabilityStatus *string  `json:"availabilityStatus"`
+	GenreIDs           []string `json:"genreIds"`
+}
+
+type UpdatePlayEditSuggestionRequest struct {
+	Title              *string  `json:"title"`
+	Synopsis           *string  `json:"synopsis"`
+	Director           *string  `json:"director"`
+	DurationMinutes    *int     `json:"durationMinutes"`
+	TheaterName        *string  `json:"theaterName"`
+	City               *string  `json:"city"`
+	AvailabilityStatus *string  `json:"availabilityStatus"`
+	GenreIDs           []string `json:"genreIds"`
 }
 
 type RejectSubmissionRequest struct {
@@ -254,6 +293,76 @@ type SubmissionData struct {
 type SubmissionListData struct {
 	Items      []SubmissionData `json:"items"`
 	NextCursor *string          `json:"nextCursor,omitempty"`
+}
+
+type PlayEditSuggestionSummaryData struct {
+	ID        string  `json:"id"`
+	Status    string  `json:"status"`
+	CreatedAt string  `json:"createdAt"`
+	UpdatedAt string  `json:"updatedAt"`
+	PlayID    string  `json:"playId"`
+	Title     string  `json:"title"`
+	City      *string `json:"city"`
+}
+
+type OwnedPlayData struct {
+	ID                   string                         `json:"id"`
+	Title                string                         `json:"title"`
+	TheaterName          string                         `json:"theaterName"`
+	City                 *string                        `json:"city"`
+	AvailabilityStatus   string                         `json:"availabilityStatus"`
+	PublishedAt          string                         `json:"publishedAt"`
+	PosterURL            *string                        `json:"posterUrl,omitempty"`
+	LatestEditSuggestion *PlayEditSuggestionSummaryData `json:"latestEditSuggestion,omitempty"`
+}
+
+type OwnedPlayListData struct {
+	Items      []OwnedPlayData `json:"items"`
+	NextCursor *string         `json:"nextCursor,omitempty"`
+}
+
+type PlayEditSuggestionData struct {
+	ID                 string          `json:"id"`
+	PlayID             string          `json:"playId"`
+	Title              string          `json:"title"`
+	Synopsis           string          `json:"synopsis"`
+	Director           string          `json:"director"`
+	DurationMinutes    int             `json:"durationMinutes"`
+	TheaterName        string          `json:"theaterName"`
+	City               *string         `json:"city"`
+	AvailabilityStatus string          `json:"availabilityStatus"`
+	Genres             []PlayGenreData `json:"genres"`
+	Media              []PlayMediaData `json:"media,omitempty"`
+	Status             string          `json:"status"`
+	CreatedByUserID    string          `json:"createdByUserId"`
+	ModeratedByUserID  *string         `json:"moderatedByUserId"`
+	ModeratedAt        *string         `json:"moderatedAt"`
+	RejectedReason     *string         `json:"rejectedReason"`
+	CreatedAt          string          `json:"createdAt"`
+	UpdatedAt          string          `json:"updatedAt"`
+}
+
+type PlayEditSuggestionListData struct {
+	Items      []PlayEditSuggestionData `json:"items"`
+	NextCursor *string                  `json:"nextCursor,omitempty"`
+}
+
+type ModerationQueueItemData struct {
+	ItemType         string  `json:"itemType"`
+	ItemID           string  `json:"itemId"`
+	PlayID           string  `json:"playId"`
+	Title            string  `json:"title"`
+	TheaterName      string  `json:"theaterName"`
+	City             *string `json:"city"`
+	CreatedAt        string  `json:"createdAt"`
+	CreatedByUserID  string  `json:"createdByUserId"`
+	SubmissionStatus *string `json:"submissionStatus,omitempty"`
+	SuggestionStatus *string `json:"suggestionStatus,omitempty"`
+}
+
+type ModerationQueueData struct {
+	Items      []ModerationQueueItemData `json:"items"`
+	NextCursor *string                   `json:"nextCursor,omitempty"`
 }
 
 type EngagementStateData struct {
@@ -463,10 +572,54 @@ type UpdateSubmissionParams struct {
 	UpdatedAt            time.Time
 }
 
+type CreatePlayEditSuggestionParams struct {
+	PlayID             string
+	CreatedByUserID    string
+	Title              string
+	Synopsis           string
+	Director           string
+	DurationMinutes    int
+	TheaterName        string
+	City               *string
+	AvailabilityStatus string
+	GenreIDs           []string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type UpdatePlayEditSuggestionParams struct {
+	Title              *string
+	Synopsis           *string
+	Director           *string
+	DurationMinutes    *int
+	TheaterName        *string
+	City               *string
+	CityProvided       bool
+	AvailabilityStatus *string
+	GenreIDs           []string
+	GenreIDsProvided   bool
+	UpdatedAt          time.Time
+}
+
+type ModeratePlayEditSuggestionParams struct {
+	AdminUserID    string
+	Status         string
+	RejectedReason *string
+	ModeratedAt    time.Time
+}
+
 type ListSubmissionsParams struct {
 	Status *string
 	After  *submissionListCursor
 	Limit  int
+}
+
+type ListPlayEditSuggestionsParams struct {
+	CreatedByUserID *string
+	PlayID          *string
+	Status          *string
+	After           *playEditSuggestionListCursor
+	Limit           int
 }
 
 type ListGenresParams struct {
@@ -496,6 +649,49 @@ type SubmissionRecord struct {
 	RejectedReason     *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type OwnedPlayRecord struct {
+	ID                 string
+	Title              string
+	TheaterName        string
+	City               *string
+	AvailabilityStatus string
+	PublishedAt        time.Time
+	PosterMediaID      *string
+	CreatedAt          time.Time
+}
+
+type PlayEditSuggestionRecord struct {
+	ID                 string
+	PlayID             string
+	Title              string
+	Synopsis           string
+	Director           string
+	DurationMinutes    int
+	TheaterName        string
+	City               *string
+	AvailabilityStatus string
+	Status             string
+	CreatedByUserID    string
+	ModeratedByUserID  *string
+	ModeratedAt        *time.Time
+	RejectedReason     *string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type ModerationQueueRecord struct {
+	ItemType         string
+	ItemID           string
+	PlayID           string
+	Title            string
+	TheaterName      string
+	City             *string
+	CreatedAt        time.Time
+	CreatedByUserID  string
+	SubmissionStatus *string
+	SuggestionStatus *string
 }
 
 type GenreRecord struct {
@@ -545,6 +741,11 @@ type reviewListCursor struct {
 type submissionListCursor struct {
 	CreatedAt time.Time `json:"createdAt"`
 	PlayID    string    `json:"playId"`
+}
+
+type playEditSuggestionListCursor struct {
+	CreatedAt    time.Time `json:"createdAt"`
+	SuggestionID string    `json:"suggestionId"`
 }
 
 type genreListCursor struct {
@@ -675,6 +876,37 @@ func decodeSubmissionListCursor(raw string) (*submissionListCursor, error) {
 	}
 
 	if cursor.CreatedAt.IsZero() || cursor.PlayID == "" {
+		return nil, fmt.Errorf("invalid cursor payload")
+	}
+
+	return &cursor, nil
+}
+
+func encodePlayEditSuggestionListCursor(cursor playEditSuggestionListCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal cursor: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodePlayEditSuggestionListCursor(raw string) (*playEditSuggestionListCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode cursor: %w", err)
+	}
+
+	var cursor playEditSuggestionListCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("unmarshal cursor: %w", err)
+	}
+
+	if cursor.CreatedAt.IsZero() || cursor.SuggestionID == "" {
 		return nil, fmt.Errorf("invalid cursor payload")
 	}
 

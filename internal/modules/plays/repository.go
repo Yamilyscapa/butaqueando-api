@@ -1025,6 +1025,50 @@ func (r *Repository) GetSubmissionByID(ctx context.Context, playID string) (Subm
 	return r.getSubmissionByUUID(ctx, playUUID)
 }
 
+func (r *Repository) GetOwnedPublishedPlayByID(ctx context.Context, playID string, userID string) (OwnedPlayRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return OwnedPlayRecord{}, err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return OwnedPlayRecord{}, err
+	}
+
+	ownerUUID, err := parseUUID(userID)
+	if err != nil {
+		return OwnedPlayRecord{}, err
+	}
+
+	var row ownedPlayRow
+	err = r.db.WithContext(ctx).
+		Table("app.plays AS p").
+		Select(`
+			p.id,
+			p.title,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.published_at,
+			p.created_at
+		`).
+		Where("p.id = ? AND p.created_by_user_id = ? AND p.curation_status = ?", playUUID, ownerUUID, "published").
+		Take(&row).Error
+	if err != nil {
+		return OwnedPlayRecord{}, err
+	}
+
+	return OwnedPlayRecord{
+		ID:                 row.ID.String(),
+		Title:              row.Title,
+		TheaterName:        row.TheaterName,
+		City:               row.City,
+		AvailabilityStatus: row.AvailabilityStatus,
+		PublishedAt:        row.PublishedAt,
+		CreatedAt:          row.CreatedAt,
+	}, nil
+}
+
 func (r *Repository) ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err
@@ -1144,6 +1188,70 @@ func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, par
 	return mapSubmissionRows(rows), nil
 }
 
+func (r *Repository) ListOwnedPublishedPlays(ctx context.Context, userID string, params ListSubmissionsParams) ([]OwnedPlayRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	ownerUUID, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.plays AS p").
+		Select(`
+			p.id,
+			p.title,
+			p.theater_name,
+			p.city,
+			p.availability_status,
+			p.published_at,
+			p.created_at,
+			media.poster_media_id
+		`).
+		Joins(`
+			LEFT JOIN LATERAL (
+				SELECT pm.id AS poster_media_id
+				FROM app.play_media AS pm
+				WHERE pm.play_id = p.id
+				ORDER BY CASE WHEN pm.kind = 'poster' THEN 0 ELSE 1 END, pm.sort_order ASC, pm.created_at ASC
+				LIMIT 1
+			) AS media ON true
+		`).
+		Where("p.created_by_user_id = ? AND p.curation_status = ?", ownerUUID, "published")
+
+	query, err = applySubmissionListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []ownedPlayRow
+	if err := query.
+		Order("p.created_at DESC").
+		Order("p.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	records := make([]OwnedPlayRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, OwnedPlayRecord{
+			ID:                 row.ID.String(),
+			Title:              row.Title,
+			TheaterName:        row.TheaterName,
+			City:               row.City,
+			AvailabilityStatus: row.AvailabilityStatus,
+			PublishedAt:        row.PublishedAt,
+			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
+			CreatedAt:          row.CreatedAt,
+		})
+	}
+
+	return records, nil
+}
+
 func (r *Repository) ListAdminSubmissions(ctx context.Context, params ListSubmissionsParams) ([]SubmissionRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err
@@ -1190,6 +1298,570 @@ func (r *Repository) ListAdminSubmissions(ctx context.Context, params ListSubmis
 	}
 
 	return mapSubmissionRows(rows), nil
+}
+
+func (r *Repository) ListPlayEditSuggestions(ctx context.Context, params ListPlayEditSuggestionsParams) ([]PlayEditSuggestionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.play_edit_suggestions AS s").
+		Select(`
+			s.id,
+			s.play_id,
+			s.title,
+			s.synopsis,
+			s.director,
+			s.duration_minutes,
+			s.theater_name,
+			s.city,
+			s.availability_status,
+			s.status,
+			s.created_by_user_id,
+			s.moderated_by_user_id,
+			s.moderated_at,
+			s.rejected_reason,
+			s.created_at,
+			s.updated_at
+		`)
+
+	if params.CreatedByUserID != nil {
+		userUUID, err := parseUUID(*params.CreatedByUserID)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where("s.created_by_user_id = ?", userUUID)
+	}
+
+	if params.PlayID != nil {
+		playUUID, err := parseUUID(*params.PlayID)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where("s.play_id = ?", playUUID)
+	}
+
+	if params.Status != nil {
+		query = query.Where("s.status = ?", *params.Status)
+	}
+
+	query, err := applyPlayEditSuggestionListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []playEditSuggestionRow
+	if err := query.
+		Order("s.created_at DESC").
+		Order("s.id DESC").
+		Limit(params.Limit).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return mapPlayEditSuggestionRows(rows), nil
+}
+
+func (r *Repository) GetPlayEditSuggestionByID(ctx context.Context, suggestionID string) (PlayEditSuggestionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	var row playEditSuggestionRow
+	if err := r.db.WithContext(ctx).
+		Table("app.play_edit_suggestions AS s").
+		Select(`
+			s.id,
+			s.play_id,
+			s.title,
+			s.synopsis,
+			s.director,
+			s.duration_minutes,
+			s.theater_name,
+			s.city,
+			s.availability_status,
+			s.status,
+			s.created_by_user_id,
+			s.moderated_by_user_id,
+			s.moderated_at,
+			s.rejected_reason,
+			s.created_at,
+			s.updated_at
+		`).
+		Where("s.id = ?", suggestionUUID).
+		Take(&row).Error; err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	records := mapPlayEditSuggestionRows([]playEditSuggestionRow{row})
+	if len(records) == 0 {
+		return PlayEditSuggestionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return records[0], nil
+}
+
+func (r *Repository) CreatePlayEditSuggestion(ctx context.Context, params CreatePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	playUUID, err := parseUUID(params.PlayID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	ownerUUID, err := parseUUID(params.CreatedByUserID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	entity := playEditSuggestionEntity{
+		PlayID:             playUUID,
+		CreatedByUserID:    ownerUUID,
+		Status:             "pending",
+		Title:              params.Title,
+		Synopsis:           params.Synopsis,
+		Director:           params.Director,
+		DurationMinutes:    params.DurationMinutes,
+		TheaterName:        params.TheaterName,
+		City:               params.City,
+		AvailabilityStatus: params.AvailabilityStatus,
+		CreatedAt:          params.CreatedAt,
+		UpdatedAt:          params.UpdatedAt,
+	}
+
+	genreEntities := make([]playEditSuggestionGenreEntity, 0, len(params.GenreIDs))
+	for _, genreID := range params.GenreIDs {
+		genreUUID, parseErr := parseUUID(genreID)
+		if parseErr != nil {
+			return PlayEditSuggestionRecord{}, parseErr
+		}
+		genreEntities = append(genreEntities, playEditSuggestionGenreEntity{GenreID: genreUUID})
+	}
+
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&entity).Error; err != nil {
+			return err
+		}
+		if len(genreEntities) > 0 {
+			for idx := range genreEntities {
+				genreEntities[idx].SuggestionID = entity.ID
+			}
+			if err := tx.Create(&genreEntities).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	return r.GetPlayEditSuggestionByID(ctx, entity.ID.String())
+}
+
+func (r *Repository) UpdatePlayEditSuggestion(ctx context.Context, suggestionID string, params UpdatePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	updates := map[string]any{
+		"updated_at": params.UpdatedAt,
+	}
+
+	if params.Title != nil {
+		updates["title"] = *params.Title
+	}
+	if params.Synopsis != nil {
+		updates["synopsis"] = *params.Synopsis
+	}
+	if params.Director != nil {
+		updates["director"] = *params.Director
+	}
+	if params.DurationMinutes != nil {
+		updates["duration_minutes"] = *params.DurationMinutes
+	}
+	if params.TheaterName != nil {
+		updates["theater_name"] = *params.TheaterName
+	}
+	if params.CityProvided {
+		updates["city"] = params.City
+	}
+	if params.AvailabilityStatus != nil {
+		updates["availability_status"] = *params.AvailabilityStatus
+	}
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&playEditSuggestionEntity{}).
+			Where("id = ? AND status = ?", suggestionUUID, "pending").
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		if params.GenreIDsProvided {
+			if err := tx.Where("suggestion_id = ?", suggestionUUID).Delete(&playEditSuggestionGenreEntity{}).Error; err != nil {
+				return err
+			}
+			if len(params.GenreIDs) > 0 {
+				genreEntities := make([]playEditSuggestionGenreEntity, 0, len(params.GenreIDs))
+				for _, genreID := range params.GenreIDs {
+					genreUUID, parseErr := parseUUID(genreID)
+					if parseErr != nil {
+						return parseErr
+					}
+					genreEntities = append(genreEntities, playEditSuggestionGenreEntity{
+						SuggestionID: suggestionUUID,
+						GenreID:      genreUUID,
+					})
+				}
+				if err := tx.Create(&genreEntities).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	return r.GetPlayEditSuggestionByID(ctx, suggestionID)
+}
+
+func (r *Repository) ModeratePlayEditSuggestion(ctx context.Context, suggestionID string, params ModeratePlayEditSuggestionParams) (PlayEditSuggestionRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	adminUUID, err := parseUUID(params.AdminUserID)
+	if err != nil {
+		return PlayEditSuggestionRecord{}, err
+	}
+
+	updates := map[string]any{
+		"status":               params.Status,
+		"moderated_by_user_id": adminUUID,
+		"moderated_at":         params.ModeratedAt,
+		"updated_at":           params.ModeratedAt,
+		"rejected_reason":      params.RejectedReason,
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&playEditSuggestionEntity{}).
+		Where("id = ? AND status = ?", suggestionUUID, "pending").
+		Updates(updates)
+	if result.Error != nil {
+		return PlayEditSuggestionRecord{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return PlayEditSuggestionRecord{}, gorm.ErrRecordNotFound
+	}
+
+	return r.GetPlayEditSuggestionByID(ctx, suggestionID)
+}
+
+func (r *Repository) ReplacePlayEditSuggestionGenres(ctx context.Context, suggestionID string, genreIDs []string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("suggestion_id = ?", suggestionUUID).Delete(&playEditSuggestionGenreEntity{}).Error; err != nil {
+			return err
+		}
+		if len(genreIDs) == 0 {
+			return nil
+		}
+		entities := make([]playEditSuggestionGenreEntity, 0, len(genreIDs))
+		for _, genreID := range genreIDs {
+			genreUUID, parseErr := parseUUID(genreID)
+			if parseErr != nil {
+				return parseErr
+			}
+			entities = append(entities, playEditSuggestionGenreEntity{SuggestionID: suggestionUUID, GenreID: genreUUID})
+		}
+		return tx.Create(&entities).Error
+	})
+}
+
+func (r *Repository) ListPlayEditSuggestionGenres(ctx context.Context, suggestionID string) ([]PlayGenreRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []playGenreRow
+	err = r.db.WithContext(ctx).
+		Table("app.play_edit_suggestion_genres AS sg").
+		Select("g.id, g.name").
+		Joins("JOIN app.genres AS g ON g.id = sg.genre_id").
+		Where("sg.suggestion_id = ?", suggestionUUID).
+		Order("g.name ASC").
+		Order("g.id ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]PlayGenreRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, PlayGenreRecord{ID: row.ID.String(), Name: row.Name})
+	}
+	return records, nil
+}
+
+func (r *Repository) ListPlayEditSuggestionMedia(ctx context.Context, suggestionID string) ([]PlayMediaRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []playEditSuggestionMediaRow
+	err = r.db.WithContext(ctx).
+		Table("app.play_edit_suggestion_media AS sm").
+		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.suggestion_id").
+		Where("sm.suggestion_id = ?", suggestionUUID).
+		Order("sm.sort_order ASC").
+		Order("sm.created_at ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]PlayMediaRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, PlayMediaRecord{
+			ID:        row.ID.String(),
+			Kind:      row.Kind,
+			ObjectKey: row.ObjectKey,
+			AltText:   row.AltText,
+			SortOrder: row.SortOrder,
+			PlayID:    row.SuggestionID.String(),
+		})
+	}
+	return records, nil
+}
+
+func (r *Repository) CreatePlayEditSuggestionMedia(ctx context.Context, suggestionID string, params CreatePlayMediaParams) (PlayMediaRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	entity := playEditSuggestionMediaEntity{
+		SuggestionID: suggestionUUID,
+		Kind:         params.Kind,
+		ObjectKey:    params.ObjectKey,
+		AltText:      params.AltText,
+		SortOrder:    params.SortOrder,
+		CreatedAt:    params.CreatedAt,
+	}
+
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	return PlayMediaRecord{
+		ID:        entity.ID.String(),
+		Kind:      entity.Kind,
+		ObjectKey: entity.ObjectKey,
+		AltText:   entity.AltText,
+		SortOrder: entity.SortOrder,
+		PlayID:    suggestionID,
+	}, nil
+}
+
+func (r *Repository) GetPlayEditSuggestionMediaByID(ctx context.Context, mediaID string) (PlayMediaRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	mediaUUID, err := parseUUID(mediaID)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	var row playEditSuggestionMediaRow
+	err = r.db.WithContext(ctx).
+		Table("app.play_edit_suggestion_media AS sm").
+		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.suggestion_id").
+		Where("sm.id = ?", mediaUUID).
+		Take(&row).Error
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
+	return PlayMediaRecord{
+		ID:        row.ID.String(),
+		Kind:      row.Kind,
+		ObjectKey: row.ObjectKey,
+		AltText:   row.AltText,
+		SortOrder: row.SortOrder,
+		PlayID:    row.SuggestionID.String(),
+	}, nil
+}
+
+func (r *Repository) DeletePlayEditSuggestionMedia(ctx context.Context, mediaID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	mediaUUID, err := parseUUID(mediaID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).Where("id = ?", mediaUUID).Delete(&playEditSuggestionMediaEntity{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *Repository) ReplacePlayEditSuggestionMedia(ctx context.Context, suggestionID string, media []CreatePlayMediaParams) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("suggestion_id = ?", suggestionUUID).Delete(&playEditSuggestionMediaEntity{}).Error; err != nil {
+			return err
+		}
+		if len(media) == 0 {
+			return nil
+		}
+		entities := make([]playEditSuggestionMediaEntity, 0, len(media))
+		for _, item := range media {
+			entities = append(entities, playEditSuggestionMediaEntity{
+				SuggestionID: suggestionUUID,
+				Kind:         item.Kind,
+				ObjectKey:    item.ObjectKey,
+				AltText:      item.AltText,
+				SortOrder:    item.SortOrder,
+				CreatedAt:    item.CreatedAt,
+			})
+		}
+		return tx.Create(&entities).Error
+	})
+}
+
+func (r *Repository) ApplyApprovedPlayEditSuggestion(ctx context.Context, suggestionID string, updatedAt time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	suggestionUUID, err := parseUUID(suggestionID)
+	if err != nil {
+		return err
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var suggestion playEditSuggestionEntity
+		if err := tx.Where("id = ? AND status = ?", suggestionUUID, "approved").Take(&suggestion).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&playEntity{}).Where("id = ?", suggestion.PlayID).Updates(map[string]any{
+			"title":               suggestion.Title,
+			"synopsis":            suggestion.Synopsis,
+			"director":            suggestion.Director,
+			"duration_minutes":    suggestion.DurationMinutes,
+			"theater_name":        suggestion.TheaterName,
+			"city":                suggestion.City,
+			"availability_status": suggestion.AvailabilityStatus,
+			"updated_at":          updatedAt,
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("play_id = ?", suggestion.PlayID).Delete(&playGenreEntity{}).Error; err != nil {
+			return err
+		}
+
+		var suggestionGenres []playEditSuggestionGenreEntity
+		if err := tx.Where("suggestion_id = ?", suggestionUUID).Find(&suggestionGenres).Error; err != nil {
+			return err
+		}
+		if len(suggestionGenres) > 0 {
+			genres := make([]playGenreEntity, 0, len(suggestionGenres))
+			for _, g := range suggestionGenres {
+				genres = append(genres, playGenreEntity{PlayID: suggestion.PlayID, GenreID: g.GenreID})
+			}
+			if err := tx.Create(&genres).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Where("play_id = ?", suggestion.PlayID).Delete(&playMediaEntity{}).Error; err != nil {
+			return err
+		}
+
+		var suggestionMedia []playEditSuggestionMediaEntity
+		if err := tx.Where("suggestion_id = ?", suggestionUUID).Order("sort_order ASC").Order("created_at ASC").Find(&suggestionMedia).Error; err != nil {
+			return err
+		}
+		if len(suggestionMedia) > 0 {
+			mediaEntities := make([]playMediaEntity, 0, len(suggestionMedia))
+			for _, m := range suggestionMedia {
+				mediaEntities = append(mediaEntities, playMediaEntity{
+					PlayID:    suggestion.PlayID,
+					Kind:      m.Kind,
+					ObjectKey: m.ObjectKey,
+					AltText:   m.AltText,
+					SortOrder: m.SortOrder,
+					CreatedAt: updatedAt,
+				})
+			}
+			if err := tx.Create(&mediaEntities).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (r *Repository) UpdateSubmission(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error) {
@@ -1490,6 +2162,24 @@ func applySubmissionListCursor(query *gorm.DB, after *submissionListCursor) (*go
 	), nil
 }
 
+func applyPlayEditSuggestionListCursor(query *gorm.DB, after *playEditSuggestionListCursor) (*gorm.DB, error) {
+	if after == nil {
+		return query, nil
+	}
+
+	suggestionUUID, err := parseUUID(after.SuggestionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		"(s.created_at < ?) OR (s.created_at = ? AND s.id < ?)",
+		after.CreatedAt,
+		after.CreatedAt,
+		suggestionUUID,
+	), nil
+}
+
 func applyGenreListCursor(query *gorm.DB, after *genreListCursor) (*gorm.DB, error) {
 	if after == nil {
 		return query, nil
@@ -1563,6 +2253,31 @@ func mapGenreRows(rows []genreRow) []GenreRecord {
 		records = append(records, GenreRecord{ID: row.ID.String(), Name: row.Name})
 	}
 
+	return records
+}
+
+func mapPlayEditSuggestionRows(rows []playEditSuggestionRow) []PlayEditSuggestionRecord {
+	records := make([]PlayEditSuggestionRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, PlayEditSuggestionRecord{
+			ID:                 row.ID.String(),
+			PlayID:             row.PlayID.String(),
+			Title:              row.Title,
+			Synopsis:           row.Synopsis,
+			Director:           row.Director,
+			DurationMinutes:    row.DurationMinutes,
+			TheaterName:        row.TheaterName,
+			City:               row.City,
+			AvailabilityStatus: row.AvailabilityStatus,
+			Status:             row.Status,
+			CreatedByUserID:    row.CreatedByUserID.String(),
+			ModeratedByUserID:  nullableUUIDToString(row.ModeratedByUserID),
+			ModeratedAt:        row.ModeratedAt,
+			RejectedReason:     row.RejectedReason,
+			CreatedAt:          row.CreatedAt,
+			UpdatedAt:          row.UpdatedAt,
+		})
+	}
 	return records
 }
 
@@ -1713,6 +2428,36 @@ type submissionRow struct {
 	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
+type ownedPlayRow struct {
+	ID                 uuid.UUID  `gorm:"column:id"`
+	Title              string     `gorm:"column:title"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	PublishedAt        time.Time  `gorm:"column:published_at"`
+	PosterMediaID      *uuid.UUID `gorm:"column:poster_media_id"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+}
+
+type playEditSuggestionRow struct {
+	ID                 uuid.UUID  `gorm:"column:id"`
+	PlayID             uuid.UUID  `gorm:"column:play_id"`
+	Title              string     `gorm:"column:title"`
+	Synopsis           string     `gorm:"column:synopsis"`
+	Director           string     `gorm:"column:director"`
+	DurationMinutes    int        `gorm:"column:duration_minutes"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	Status             string     `gorm:"column:status"`
+	CreatedByUserID    uuid.UUID  `gorm:"column:created_by_user_id"`
+	ModeratedByUserID  *uuid.UUID `gorm:"column:moderated_by_user_id"`
+	ModeratedAt        *time.Time `gorm:"column:moderated_at"`
+	RejectedReason     *string    `gorm:"column:rejected_reason"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
+}
+
 type genreRow struct {
 	ID   uuid.UUID `gorm:"column:id"`
 	Name string    `gorm:"column:name"`
@@ -1735,6 +2480,15 @@ type playMediaRow struct {
 	ObjectKey string    `gorm:"column:object_key"`
 	AltText   *string   `gorm:"column:alt_text"`
 	SortOrder int       `gorm:"column:sort_order"`
+}
+
+type playEditSuggestionMediaRow struct {
+	ID           uuid.UUID `gorm:"column:id"`
+	Kind         string    `gorm:"column:kind"`
+	ObjectKey    string    `gorm:"column:object_key"`
+	AltText      *string   `gorm:"column:alt_text"`
+	SortOrder    int       `gorm:"column:sort_order"`
+	SuggestionID uuid.UUID `gorm:"column:suggestion_id"`
 }
 
 type reviewRow struct {
@@ -1844,6 +2598,40 @@ type playMediaEntity struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
+type playEditSuggestionEntity struct {
+	ID                 uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	PlayID             uuid.UUID  `gorm:"column:play_id;type:uuid"`
+	CreatedByUserID    uuid.UUID  `gorm:"column:created_by_user_id;type:uuid"`
+	Status             string     `gorm:"column:status"`
+	Title              string     `gorm:"column:title"`
+	Synopsis           string     `gorm:"column:synopsis"`
+	Director           string     `gorm:"column:director"`
+	DurationMinutes    int        `gorm:"column:duration_minutes"`
+	TheaterName        string     `gorm:"column:theater_name"`
+	City               *string    `gorm:"column:city"`
+	AvailabilityStatus string     `gorm:"column:availability_status"`
+	ModeratedByUserID  *uuid.UUID `gorm:"column:moderated_by_user_id;type:uuid"`
+	ModeratedAt        *time.Time `gorm:"column:moderated_at"`
+	RejectedReason     *string    `gorm:"column:rejected_reason"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
+}
+
+type playEditSuggestionGenreEntity struct {
+	SuggestionID uuid.UUID `gorm:"column:suggestion_id;type:uuid;primaryKey"`
+	GenreID      uuid.UUID `gorm:"column:genre_id;type:uuid;primaryKey"`
+}
+
+type playEditSuggestionMediaEntity struct {
+	ID           uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	SuggestionID uuid.UUID `gorm:"column:suggestion_id;type:uuid"`
+	Kind         string    `gorm:"column:kind"`
+	ObjectKey    string    `gorm:"column:object_key"`
+	AltText      *string   `gorm:"column:alt_text"`
+	SortOrder    int       `gorm:"column:sort_order"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+}
+
 func (playEntity) TableName() string {
 	return "app.plays"
 }
@@ -1858,6 +2646,18 @@ func (playGenreEntity) TableName() string {
 
 func (playMediaEntity) TableName() string {
 	return "app.play_media"
+}
+
+func (playEditSuggestionEntity) TableName() string {
+	return "app.play_edit_suggestions"
+}
+
+func (playEditSuggestionGenreEntity) TableName() string {
+	return "app.play_edit_suggestion_genres"
+}
+
+func (playEditSuggestionMediaEntity) TableName() string {
+	return "app.play_edit_suggestion_media"
 }
 
 func (reviewEntity) TableName() string {
