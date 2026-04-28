@@ -8,3 +8,4 @@
 \ir 04_plays.sql
 \ir 05_play_relations.sql
 \ir 06_social.sql
+\ir 07_cities_mexico.sql

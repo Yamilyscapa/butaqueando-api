@@ -10,6 +10,8 @@
 \ir tables/password_reset_tokens.sql
 \ir tables/email_verification_tokens.sql
 \ir tables/account_deletion_requests.sql
+\ir tables/cities.sql
+\ir tables/theaters.sql
 
 \ir tables/plays.sql
 \ir tables/genres.sql
@@ -44,6 +46,7 @@
 \ir indexes/password_reset_tokens.sql
 \ir indexes/email_verification_tokens.sql
 \ir indexes/account_deletion_requests.sql
+\ir indexes/cities_theaters.sql
 
 \ir views/play_rating_stats.sql
 \ir views/user_genre_stats.sql

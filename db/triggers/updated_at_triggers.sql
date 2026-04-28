@@ -39,3 +39,15 @@ CREATE TRIGGER trg_account_deletion_requests_updated_at
 BEFORE UPDATE ON app.account_deletion_requests
 FOR EACH ROW
 EXECUTE FUNCTION app.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_cities_updated_at ON app.cities;
+CREATE TRIGGER trg_cities_updated_at
+BEFORE UPDATE ON app.cities
+FOR EACH ROW
+EXECUTE FUNCTION app.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_theaters_updated_at ON app.theaters;
+CREATE TRIGGER trg_theaters_updated_at
+BEFORE UPDATE ON app.theaters
+FOR EACH ROW
+EXECUTE FUNCTION app.set_updated_at();

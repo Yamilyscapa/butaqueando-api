@@ -1,0 +1,27 @@
+INSERT INTO app.cities (name)
+VALUES
+  ('Ciudad de México'),
+  ('Guadalajara'),
+  ('Monterrey'),
+  ('Puebla'),
+  ('Querétaro'),
+  ('León'),
+  ('Mérida'),
+  ('Tijuana'),
+  ('Toluca'),
+  ('San Luis Potosí'),
+  ('Aguascalientes'),
+  ('Morelia'),
+  ('Veracruz'),
+  ('Oaxaca'),
+  ('Chihuahua'),
+  ('Hermosillo'),
+  ('Culiacán'),
+  ('Cancún'),
+  ('Villahermosa'),
+  ('Tuxtla Gutiérrez'),
+  ('Saltillo'),
+  ('Torreón'),
+  ('Mexicali'),
+  ('Ensenada')
+ON CONFLICT (name) DO NOTHING;
