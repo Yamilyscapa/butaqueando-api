@@ -54,6 +54,14 @@ type repositoryPort interface {
 	UpdateSubmission(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
 	GetOwnedPublishedPlayByID(ctx context.Context, playID string, userID string) (OwnedPlayRecord, error)
 	ListGenres(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	ListCities(ctx context.Context, params ListCitiesParams) ([]CityRecord, error)
+	ListTheaters(ctx context.Context, params ListTheatersParams) ([]TheaterRecord, error)
+	CityExists(ctx context.Context, cityName string) (bool, error)
+	TheaterExistsInCity(ctx context.Context, cityName string, theaterName string) (bool, error)
+	CreateCity(ctx context.Context, name string) (CityRecord, error)
+	DeleteCity(ctx context.Context, cityID string) error
+	CreateTheater(ctx context.Context, cityID string, name string) (TheaterRecord, error)
+	DeleteTheater(ctx context.Context, theaterID string) error
 	CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error)
 	CreateGenre(ctx context.Context, name string) (GenreRecord, error)
 	DeleteGenre(ctx context.Context, genreID string) error
@@ -681,6 +689,9 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 	}
 
 	city := normalizeOptionalText(req.City)
+	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+		return SubmissionData{}, err
+	}
 	now := time.Now().UTC()
 	record, err := s.repo.CreateSubmission(ctx, userID, CreateSubmissionParams{
 		Title:              title,
@@ -957,6 +968,20 @@ func (s *Service) UpdateMySubmission(ctx context.Context, userID string, playID 
 		return SubmissionData{}, err
 	}
 
+	theaterName := current.TheaterName
+	if patch.TheaterName != nil {
+		theaterName = *patch.TheaterName
+	}
+
+	city := current.City
+	if patch.CityProvided {
+		city = patch.City
+	}
+
+	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+		return SubmissionData{}, err
+	}
+
 	patch.UpdatedAt = time.Now().UTC()
 	if current.CurationStatus == "rejected" {
 		patch.SetPendingResubmit = true
@@ -1137,6 +1162,10 @@ func (s *Service) CreatePlayEditSuggestion(ctx context.Context, userID string, r
 			city = &trimmed
 		}
 	}
+
+	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+		return PlayEditSuggestionData{}, err
+	}
 	availabilityStatus := current.AvailabilityStatus
 	if req.AvailabilityStatus != nil {
 		availabilityStatus, err = normalizeAvailabilityStatus(req.AvailabilityStatus)
@@ -1276,6 +1305,21 @@ func (s *Service) UpdateMyPlayEditSuggestion(ctx context.Context, userID string,
 	if err != nil {
 		return PlayEditSuggestionData{}, err
 	}
+
+	theaterName := current.TheaterName
+	if patch.TheaterName != nil {
+		theaterName = *patch.TheaterName
+	}
+
+	city := current.City
+	if patch.CityProvided {
+		city = patch.City
+	}
+
+	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+		return PlayEditSuggestionData{}, err
+	}
+
 	patch.UpdatedAt = time.Now().UTC()
 
 	if patch.GenreIDsProvided {
@@ -1348,6 +1392,92 @@ func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreL
 	}
 
 	return buildGenreListData(records, limit)
+}
+
+func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityListData, error) {
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return CityListData{}, err
+	}
+
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return CityListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListCities(ctx, ListCitiesParams{After: cursor, Limit: limit + 1})
+	if err != nil {
+		return CityListData{}, sharederrors.Internal("failed to load cities", nil)
+	}
+
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]CityData, 0, len(records))
+	for _, record := range records {
+		items = append(items, CityData{ID: record.ID, Name: record.Name})
+	}
+
+	response := CityListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeGenreListCursor(genreListCursor{Name: strings.ToLower(last.Name), GenreID: last.ID})
+		if err != nil {
+			return CityListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
+}
+
+func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (TheaterListData, error) {
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return TheaterListData{}, err
+	}
+
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return TheaterListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	var cityID *string
+	if rawCityID := strings.TrimSpace(query.CityID); rawCityID != "" {
+		if !isValidUUID(rawCityID) {
+			return TheaterListData{}, sharederrors.Validation("invalid cityId", nil)
+		}
+		cityID = &rawCityID
+	}
+
+	records, err := s.repo.ListTheaters(ctx, ListTheatersParams{CityID: cityID, After: cursor, Limit: limit + 1})
+	if err != nil {
+		return TheaterListData{}, sharederrors.Internal("failed to load theaters", nil)
+	}
+
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]TheaterData, 0, len(records))
+	for _, record := range records {
+		items = append(items, TheaterData{ID: record.ID, CityID: record.CityID, Name: record.Name})
+	}
+
+	response := TheaterListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeGenreListCursor(genreListCursor{Name: strings.ToLower(last.Name), GenreID: last.ID})
+		if err != nil {
+			return TheaterListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
 }
 
 func (s *Service) ListAdminGenres(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error) {
@@ -1427,6 +1557,99 @@ func (s *Service) DeleteAdminGenre(ctx context.Context, userID string, role stri
 		}
 
 		return sharederrors.Internal("failed to delete genre", nil)
+	}
+
+	return nil
+}
+
+func (s *Service) CreateAdminCity(ctx context.Context, userID string, role string, req CreateCityRequest) (CityData, error) {
+	if !isValidAuthUserID(userID) {
+		return CityData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+	if err := requireAdminRole(role); err != nil {
+		return CityData{}, err
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return CityData{}, sharederrors.Validation("name must not be empty", nil)
+	}
+
+	record, err := s.repo.CreateCity(ctx, name)
+	if err != nil {
+		if isDuplicatedKeyError(err) {
+			return CityData{}, sharederrors.New(http.StatusConflict, "CITY_ALREADY_EXISTS", "city already exists", nil)
+		}
+		return CityData{}, sharederrors.Internal("failed to create city", nil)
+	}
+
+	return CityData{ID: record.ID, Name: record.Name}, nil
+}
+
+func (s *Service) DeleteAdminCity(ctx context.Context, userID string, role string, cityID string) error {
+	if !isValidAuthUserID(userID) {
+		return sharederrors.Unauthorized("invalid access token", nil)
+	}
+	if err := requireAdminRole(role); err != nil {
+		return err
+	}
+	if !isValidUUID(cityID) {
+		return sharederrors.Validation("invalid cityId", nil)
+	}
+
+	if err := s.repo.DeleteCity(ctx, cityID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("city not found", nil)
+		}
+		return sharederrors.Internal("failed to delete city", nil)
+	}
+
+	return nil
+}
+
+func (s *Service) CreateAdminTheater(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error) {
+	if !isValidAuthUserID(userID) {
+		return TheaterData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+	if err := requireAdminRole(role); err != nil {
+		return TheaterData{}, err
+	}
+	if !isValidUUID(strings.TrimSpace(req.CityID)) {
+		return TheaterData{}, sharederrors.Validation("invalid cityId", nil)
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return TheaterData{}, sharederrors.Validation("name must not be empty", nil)
+	}
+
+	record, err := s.repo.CreateTheater(ctx, strings.TrimSpace(req.CityID), name)
+	if err != nil {
+		if isDuplicatedKeyError(err) {
+			return TheaterData{}, sharederrors.New(http.StatusConflict, "THEATER_ALREADY_EXISTS", "theater already exists", nil)
+		}
+		return TheaterData{}, sharederrors.Internal("failed to create theater", nil)
+	}
+
+	return TheaterData{ID: record.ID, CityID: record.CityID, Name: record.Name}, nil
+}
+
+func (s *Service) DeleteAdminTheater(ctx context.Context, userID string, role string, theaterID string) error {
+	if !isValidAuthUserID(userID) {
+		return sharederrors.Unauthorized("invalid access token", nil)
+	}
+	if err := requireAdminRole(role); err != nil {
+		return err
+	}
+	if !isValidUUID(theaterID) {
+		return sharederrors.Validation("invalid theaterId", nil)
+	}
+
+	if err := s.repo.DeleteTheater(ctx, theaterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("theater not found", nil)
+		}
+		return sharederrors.Internal("failed to delete theater", nil)
 	}
 
 	return nil
@@ -3105,6 +3328,31 @@ func validateSubmissionPatch(req UpdateSubmissionRequest) (UpdateSubmissionParam
 	}
 
 	return patch, nil
+}
+
+func (s *Service) validateCityAndTheater(ctx context.Context, city *string, theaterName string) error {
+	if city == nil || strings.TrimSpace(*city) == "" {
+		return nil
+	}
+
+	normalizedCity := strings.TrimSpace(*city)
+	cityExists, err := s.repo.CityExists(ctx, normalizedCity)
+	if err != nil {
+		return sharederrors.Internal("failed to validate city", nil)
+	}
+	if !cityExists {
+		return sharederrors.Validation("city is not in the allowed list", nil)
+	}
+
+	theaterExists, err := s.repo.TheaterExistsInCity(ctx, normalizedCity, theaterName)
+	if err != nil {
+		return sharederrors.Internal("failed to validate theater", nil)
+	}
+	if !theaterExists {
+		return sharederrors.Validation("theater is not in the allowed list for the selected city", nil)
+	}
+
+	return nil
 }
 
 func requireAdminRole(role string) error {

@@ -25,6 +25,8 @@ type fakeService struct {
 	listUserWatchFn             func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	listUserRevFn               func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	listGenresFn                func(ctx context.Context, query ListGenresQuery) (GenreListData, error)
+	listCitiesFn                func(ctx context.Context, query ListCitiesQuery) (CityListData, error)
+	listTheatersFn              func(ctx context.Context, query ListTheatersQuery) (TheaterListData, error)
 	createSubFn                 func(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error)
 	createSubMediaUploadFn      func(ctx context.Context, userID string, playID string, req CreateSubmissionMediaUploadRequest) (CreateSubmissionMediaUploadData, error)
 	attachSubMediaFn            func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
@@ -36,6 +38,10 @@ type fakeService struct {
 	listAdminGenresFn           func(ctx context.Context, userID string, role string, query ListGenresQuery) (GenreListData, error)
 	createAdminGenreFn          func(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
 	deleteAdminGenreFn          func(ctx context.Context, userID string, role string, genreID string) error
+	createAdminCityFn           func(ctx context.Context, userID string, role string, req CreateCityRequest) (CityData, error)
+	deleteAdminCityFn           func(ctx context.Context, userID string, role string, cityID string) error
+	createAdminTheaterFn        func(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error)
+	deleteAdminTheaterFn        func(ctx context.Context, userID string, role string, theaterID string) error
 	listAdminSubsFn             func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
 	getAdminSubByIDFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	updateAdminSubFn            func(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -137,6 +143,22 @@ func (f *fakeService) ListGenres(ctx context.Context, query ListGenresQuery) (Ge
 	return GenreListData{}, nil
 }
 
+func (f *fakeService) ListCities(ctx context.Context, query ListCitiesQuery) (CityListData, error) {
+	if f.listCitiesFn != nil {
+		return f.listCitiesFn(ctx, query)
+	}
+
+	return CityListData{}, nil
+}
+
+func (f *fakeService) ListTheaters(ctx context.Context, query ListTheatersQuery) (TheaterListData, error) {
+	if f.listTheatersFn != nil {
+		return f.listTheatersFn(ctx, query)
+	}
+
+	return TheaterListData{}, nil
+}
+
 func (f *fakeService) CreateSubmission(ctx context.Context, userID string, req CreateSubmissionRequest) (SubmissionData, error) {
 	if f.createSubFn != nil {
 		return f.createSubFn(ctx, userID, req)
@@ -228,6 +250,38 @@ func (f *fakeService) CreateAdminGenre(ctx context.Context, userID string, role 
 func (f *fakeService) DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error {
 	if f.deleteAdminGenreFn != nil {
 		return f.deleteAdminGenreFn(ctx, userID, role, genreID)
+	}
+
+	return nil
+}
+
+func (f *fakeService) CreateAdminCity(ctx context.Context, userID string, role string, req CreateCityRequest) (CityData, error) {
+	if f.createAdminCityFn != nil {
+		return f.createAdminCityFn(ctx, userID, role, req)
+	}
+
+	return CityData{}, nil
+}
+
+func (f *fakeService) DeleteAdminCity(ctx context.Context, userID string, role string, cityID string) error {
+	if f.deleteAdminCityFn != nil {
+		return f.deleteAdminCityFn(ctx, userID, role, cityID)
+	}
+
+	return nil
+}
+
+func (f *fakeService) CreateAdminTheater(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error) {
+	if f.createAdminTheaterFn != nil {
+		return f.createAdminTheaterFn(ctx, userID, role, req)
+	}
+
+	return TheaterData{}, nil
+}
+
+func (f *fakeService) DeleteAdminTheater(ctx context.Context, userID string, role string, theaterID string) error {
+	if f.deleteAdminTheaterFn != nil {
+		return f.deleteAdminTheaterFn(ctx, userID, role, theaterID)
 	}
 
 	return nil

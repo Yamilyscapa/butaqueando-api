@@ -37,6 +37,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	v1.GET("/feed", handler.Feed)
 	v1.GET("/search", handler.Search)
 	v1.GET("/genres", handler.ListGenres)
+	v1.GET("/cities", handler.ListCities)
+	v1.GET("/theaters", handler.ListTheaters)
 
 	group := v1.Group(BasePath)
 
@@ -113,6 +115,16 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminGenres.GET("", handler.ListAdminGenres)
 	adminGenres.POST("", handler.CreateAdminGenre)
 	adminGenres.DELETE("/:genreId", handler.DeleteAdminGenre)
+
+	adminCities := v1.Group("/admin/cities")
+	adminCities.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminCities.POST("", handler.CreateAdminCity)
+	adminCities.DELETE("/:cityId", handler.DeleteAdminCity)
+
+	adminTheaters := v1.Group("/admin/theaters")
+	adminTheaters.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminTheaters.POST("", handler.CreateAdminTheater)
+	adminTheaters.DELETE("/:theaterId", handler.DeleteAdminTheater)
 
 	adminReviewComments := v1.Group("/admin/review-comments")
 	adminReviewComments.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

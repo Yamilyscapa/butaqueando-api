@@ -58,6 +58,14 @@ type fakeRepository struct {
 	getSubmissionByIDFn    func(ctx context.Context, playID string) (SubmissionRecord, error)
 	updateSubmissionFn     func(ctx context.Context, playID string, params UpdateSubmissionParams) (SubmissionRecord, error)
 	listGenresFn           func(ctx context.Context, params ListGenresParams) ([]GenreRecord, error)
+	listCitiesFn           func(ctx context.Context, params ListCitiesParams) ([]CityRecord, error)
+	listTheatersFn         func(ctx context.Context, params ListTheatersParams) ([]TheaterRecord, error)
+	cityExistsFn           func(ctx context.Context, cityName string) (bool, error)
+	theaterExistsInCityFn  func(ctx context.Context, cityName string, theaterName string) (bool, error)
+	createCityFn           func(ctx context.Context, name string) (CityRecord, error)
+	deleteCityFn           func(ctx context.Context, cityID string) error
+	createTheaterFn        func(ctx context.Context, cityID string, name string) (TheaterRecord, error)
+	deleteTheaterFn        func(ctx context.Context, theaterID string) error
 	countGenresByIDsFn     func(ctx context.Context, genreIDs []string) (int64, error)
 	createGenreFn          func(ctx context.Context, name string) (GenreRecord, error)
 	deleteGenreFn          func(ctx context.Context, genreID string) error
@@ -233,6 +241,70 @@ func (f *fakeRepository) ListGenres(ctx context.Context, params ListGenresParams
 	}
 
 	return nil, nil
+}
+
+func (f *fakeRepository) ListCities(ctx context.Context, params ListCitiesParams) ([]CityRecord, error) {
+	if f.listCitiesFn != nil {
+		return f.listCitiesFn(ctx, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) ListTheaters(ctx context.Context, params ListTheatersParams) ([]TheaterRecord, error) {
+	if f.listTheatersFn != nil {
+		return f.listTheatersFn(ctx, params)
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepository) CityExists(ctx context.Context, cityName string) (bool, error) {
+	if f.cityExistsFn != nil {
+		return f.cityExistsFn(ctx, cityName)
+	}
+
+	return true, nil
+}
+
+func (f *fakeRepository) TheaterExistsInCity(ctx context.Context, cityName string, theaterName string) (bool, error) {
+	if f.theaterExistsInCityFn != nil {
+		return f.theaterExistsInCityFn(ctx, cityName, theaterName)
+	}
+
+	return true, nil
+}
+
+func (f *fakeRepository) CreateCity(ctx context.Context, name string) (CityRecord, error) {
+	if f.createCityFn != nil {
+		return f.createCityFn(ctx, name)
+	}
+
+	return CityRecord{}, nil
+}
+
+func (f *fakeRepository) DeleteCity(ctx context.Context, cityID string) error {
+	if f.deleteCityFn != nil {
+		return f.deleteCityFn(ctx, cityID)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) CreateTheater(ctx context.Context, cityID string, name string) (TheaterRecord, error) {
+	if f.createTheaterFn != nil {
+		return f.createTheaterFn(ctx, cityID, name)
+	}
+
+	return TheaterRecord{}, nil
+}
+
+func (f *fakeRepository) DeleteTheater(ctx context.Context, theaterID string) error {
+	if f.deleteTheaterFn != nil {
+		return f.deleteTheaterFn(ctx, theaterID)
+	}
+
+	return nil
 }
 
 func (f *fakeRepository) CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error) {

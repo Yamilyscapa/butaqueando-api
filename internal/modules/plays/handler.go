@@ -41,6 +41,12 @@ type servicePort interface {
 	CreateAdminGenre(ctx context.Context, userID string, role string, req CreateGenreRequest) (GenreData, error)
 	DeleteAdminGenre(ctx context.Context, userID string, role string, genreID string) error
 	ListGenres(ctx context.Context, query ListGenresQuery) (GenreListData, error)
+	ListCities(ctx context.Context, query ListCitiesQuery) (CityListData, error)
+	ListTheaters(ctx context.Context, query ListTheatersQuery) (TheaterListData, error)
+	CreateAdminCity(ctx context.Context, userID string, role string, req CreateCityRequest) (CityData, error)
+	DeleteAdminCity(ctx context.Context, userID string, role string, cityID string) error
+	CreateAdminTheater(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error)
+	DeleteAdminTheater(ctx context.Context, userID string, role string, theaterID string) error
 	ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
 	GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -312,6 +318,38 @@ func (h *Handler) ListGenres(c *gin.Context) {
 	}
 
 	data, err := h.service.ListGenres(c.Request.Context(), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListCities(c *gin.Context) {
+	var query ListCitiesQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListCities(c.Request.Context(), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListTheaters(c *gin.Context) {
+	var query ListTheatersQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListTheaters(c.Request.Context(), query)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -649,6 +687,84 @@ func (h *Handler) DeleteAdminGenre(c *gin.Context) {
 
 	err := h.service.DeleteAdminGenre(c.Request.Context(), userID, role, c.Param("genreId"))
 	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) CreateAdminCity(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateCityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreateAdminCity(c.Request.Context(), userID, role, req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) DeleteAdminCity(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	if err := h.service.DeleteAdminCity(c.Request.Context(), userID, role, c.Param("cityId")); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) CreateAdminTheater(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var req CreateTheaterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid request body", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.CreateAdminTheater(c.Request.Context(), userID, role, req)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusCreated, data)
+}
+
+func (h *Handler) DeleteAdminTheater(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	if err := h.service.DeleteAdminTheater(c.Request.Context(), userID, role, c.Param("theaterId")); err != nil {
 		_ = c.Error(err)
 		return
 	}

@@ -1134,6 +1134,167 @@ func (r *Repository) DeleteGenre(ctx context.Context, genreID string) error {
 	return nil
 }
 
+func (r *Repository) ListCities(ctx context.Context, params ListCitiesParams) ([]CityRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.cities AS c").
+		Select("c.id, c.name").
+		Where("c.is_active = true")
+
+	query, err := applyGenreListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []genreRow
+	if err := query.Order("c.name ASC").Order("c.id ASC").Limit(params.Limit).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	records := make([]CityRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, CityRecord{ID: row.ID.String(), Name: row.Name})
+	}
+
+	return records, nil
+}
+
+func (r *Repository) ListTheaters(ctx context.Context, params ListTheatersParams) ([]TheaterRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("app.theaters AS t").
+		Select("t.id, t.city_id, t.name").
+		Where("t.is_active = true")
+
+	if params.CityID != nil {
+		cityUUID, err := parseUUID(*params.CityID)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where("t.city_id = ?", cityUUID)
+	}
+
+	query, err := applyGenreListCursor(query, params.After)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []theaterRow
+	if err := query.Order("t.name ASC").Order("t.id ASC").Limit(params.Limit).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	records := make([]TheaterRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, TheaterRecord{ID: row.ID.String(), CityID: row.CityID.String(), Name: row.Name})
+	}
+
+	return records, nil
+}
+
+func (r *Repository) CityExists(ctx context.Context, cityName string) (bool, error) {
+	if err := r.ensureDB(); err != nil {
+		return false, err
+	}
+
+	var count int64
+	err := r.db.WithContext(ctx).Table("app.cities").Where("LOWER(name) = LOWER(?) AND is_active = true", cityName).Count(&count).Error
+	return count > 0, err
+}
+
+func (r *Repository) TheaterExistsInCity(ctx context.Context, cityName string, theaterName string) (bool, error) {
+	if err := r.ensureDB(); err != nil {
+		return false, err
+	}
+
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("app.theaters AS t").
+		Joins("JOIN app.cities AS c ON c.id = t.city_id").
+		Where("LOWER(c.name) = LOWER(?) AND LOWER(t.name) = LOWER(?) AND c.is_active = true AND t.is_active = true", cityName, theaterName).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (r *Repository) CreateCity(ctx context.Context, name string) (CityRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return CityRecord{}, err
+	}
+
+	entity := cityEntity{Name: name, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), IsActive: true}
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return CityRecord{}, err
+	}
+
+	return CityRecord{ID: entity.ID.String(), Name: entity.Name}, nil
+}
+
+func (r *Repository) DeleteCity(ctx context.Context, cityID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	cityUUID, err := parseUUID(cityID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).Model(&cityEntity{}).Where("id = ?", cityUUID).Updates(map[string]any{"is_active": false, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
+func (r *Repository) CreateTheater(ctx context.Context, cityID string, name string) (TheaterRecord, error) {
+	if err := r.ensureDB(); err != nil {
+		return TheaterRecord{}, err
+	}
+
+	cityUUID, err := parseUUID(cityID)
+	if err != nil {
+		return TheaterRecord{}, err
+	}
+
+	entity := theaterEntity{CityID: cityUUID, Name: name, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), IsActive: true}
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return TheaterRecord{}, err
+	}
+
+	return TheaterRecord{ID: entity.ID.String(), CityID: entity.CityID.String(), Name: entity.Name}, nil
+}
+
+func (r *Repository) DeleteTheater(ctx context.Context, theaterID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	theaterUUID, err := parseUUID(theaterID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).Model(&theaterEntity{}).Where("id = ?", theaterUUID).Updates(map[string]any{"is_active": false, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err
@@ -2463,6 +2624,12 @@ type genreRow struct {
 	Name string    `gorm:"column:name"`
 }
 
+type theaterRow struct {
+	ID     uuid.UUID `gorm:"column:id"`
+	CityID uuid.UUID `gorm:"column:city_id"`
+	Name   string    `gorm:"column:name"`
+}
+
 type playGenreRow struct {
 	ID   uuid.UUID `gorm:"column:id"`
 	Name string    `gorm:"column:name"`
@@ -2583,6 +2750,23 @@ type genreEntity struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
+type cityEntity struct {
+	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	Name      string    `gorm:"column:name"`
+	IsActive  bool      `gorm:"column:is_active"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+type theaterEntity struct {
+	ID        uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	CityID    uuid.UUID `gorm:"column:city_id;type:uuid"`
+	Name      string    `gorm:"column:name"`
+	IsActive  bool      `gorm:"column:is_active"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
 type playGenreEntity struct {
 	PlayID  uuid.UUID `gorm:"column:play_id;type:uuid;primaryKey"`
 	GenreID uuid.UUID `gorm:"column:genre_id;type:uuid;primaryKey"`
@@ -2638,6 +2822,14 @@ func (playEntity) TableName() string {
 
 func (genreEntity) TableName() string {
 	return "app.genres"
+}
+
+func (cityEntity) TableName() string {
+	return "app.cities"
+}
+
+func (theaterEntity) TableName() string {
+	return "app.theaters"
 }
 
 func (playGenreEntity) TableName() string {

@@ -41,6 +41,17 @@ type ListGenresQuery struct {
 	Limit  int    `form:"limit"`
 }
 
+type ListCitiesQuery struct {
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
+type ListTheatersQuery struct {
+	CityID string `form:"cityId"`
+	Cursor string `form:"cursor"`
+	Limit  int    `form:"limit"`
+}
+
 type ListMyEngagementsQuery struct {
 	Cursor string `form:"cursor"`
 	Limit  int    `form:"limit"`
@@ -154,6 +165,15 @@ type CreateGenreRequest struct {
 	Name string `json:"name"`
 }
 
+type CreateCityRequest struct {
+	Name string `json:"name"`
+}
+
+type CreateTheaterRequest struct {
+	CityID string `json:"cityId"`
+	Name   string `json:"name"`
+}
+
 type SetEngagementRequest struct {
 	Kind string `json:"kind"`
 }
@@ -195,9 +215,30 @@ type GenreData struct {
 	Name string `json:"name"`
 }
 
+type CityData struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type TheaterData struct {
+	ID     string `json:"id"`
+	CityID string `json:"cityId"`
+	Name   string `json:"name"`
+}
+
 type GenreListData struct {
 	Items      []GenreData `json:"items"`
 	NextCursor *string     `json:"nextCursor,omitempty"`
+}
+
+type CityListData struct {
+	Items      []CityData `json:"items"`
+	NextCursor *string    `json:"nextCursor,omitempty"`
+}
+
+type TheaterListData struct {
+	Items      []TheaterData `json:"items"`
+	NextCursor *string       `json:"nextCursor,omitempty"`
 }
 
 type PlayCastMemberData struct {
@@ -627,6 +668,17 @@ type ListGenresParams struct {
 	Limit int
 }
 
+type ListCitiesParams struct {
+	After *genreListCursor
+	Limit int
+}
+
+type ListTheatersParams struct {
+	CityID *string
+	After  *genreListCursor
+	Limit  int
+}
+
 type ListUserReviewsParams struct {
 	After *reviewListCursor
 	Limit int
@@ -697,6 +749,17 @@ type ModerationQueueRecord struct {
 type GenreRecord struct {
 	ID   string
 	Name string
+}
+
+type CityRecord struct {
+	ID   string
+	Name string
+}
+
+type TheaterRecord struct {
+	ID     string
+	CityID string
+	Name   string
 }
 
 type ReviewCommentRecord struct {
