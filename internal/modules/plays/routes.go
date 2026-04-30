@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/butaqueando/api/internal/http/middleware"
+	"github.com/butaqueando/api/internal/shared/cache"
 	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ type Dependencies struct {
 	ImageQueue        ImageQueue
 	OptimizeImages    bool
 	WebPQuality       int
+	Cache             cache.Client
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
@@ -31,6 +33,7 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 		WithMaxImageBytes(deps.MaxImageBytes),
 		WithImageQueue(deps.ImageQueue),
 		WithImageOptimization(deps.OptimizeImages, deps.WebPQuality),
+		WithCache(deps.Cache),
 	)
 	handler := NewHandler(service)
 
@@ -125,6 +128,10 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	adminTheaters.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	adminTheaters.POST("", handler.CreateAdminTheater)
 	adminTheaters.DELETE("/:theaterId", handler.DeleteAdminTheater)
+
+	adminPlays := v1.Group("/admin/plays")
+	adminPlays.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
+	adminPlays.DELETE("/:playId", handler.DeleteAdminPlay)
 
 	adminReviewComments := v1.Group("/admin/review-comments")
 	adminReviewComments.Use(middleware.RequireAccessToken(deps.AccessTokenParser))

@@ -2,11 +2,13 @@ package plays
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/butaqueando/api/internal/shared/cache"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
 	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -14,6 +16,40 @@ import (
 )
 
 type fakePresignStorage struct{}
+
+type fakeCache struct {
+	values   map[string]string
+	getErr   error
+	setErr   error
+	setCalls int
+	setTTL   time.Duration
+}
+
+func (f *fakeCache) Get(_ context.Context, key string) (string, error) {
+	if f.getErr != nil {
+		return "", f.getErr
+	}
+	value, ok := f.values[key]
+	if !ok {
+		return "", cache.ErrCacheMiss
+	}
+	return value, nil
+}
+
+func (f *fakeCache) Set(_ context.Context, key string, value string, ttl time.Duration) error {
+	f.setCalls++
+	f.setTTL = ttl
+	if f.setErr != nil {
+		return f.setErr
+	}
+	if f.values == nil {
+		f.values = map[string]string{}
+	}
+	f.values[key] = value
+	return nil
+}
+
+func (f *fakeCache) Close() error { return nil }
 
 func (fakePresignStorage) Bucket() string { return "test-bucket" }
 
@@ -66,6 +102,7 @@ type fakeRepository struct {
 	deleteCityFn           func(ctx context.Context, cityID string) error
 	createTheaterFn        func(ctx context.Context, cityID string, name string) (TheaterRecord, error)
 	deleteTheaterFn        func(ctx context.Context, theaterID string) error
+	deletePlayFn           func(ctx context.Context, playID string) error
 	countGenresByIDsFn     func(ctx context.Context, genreIDs []string) (int64, error)
 	createGenreFn          func(ctx context.Context, name string) (GenreRecord, error)
 	deleteGenreFn          func(ctx context.Context, genreID string) error
@@ -302,6 +339,14 @@ func (f *fakeRepository) CreateTheater(ctx context.Context, cityID string, name 
 func (f *fakeRepository) DeleteTheater(ctx context.Context, theaterID string) error {
 	if f.deleteTheaterFn != nil {
 		return f.deleteTheaterFn(ctx, theaterID)
+	}
+
+	return nil
+}
+
+func (f *fakeRepository) DeletePlay(ctx context.Context, playID string) error {
+	if f.deletePlayFn != nil {
+		return f.deletePlayFn(ctx, playID)
 	}
 
 	return nil
@@ -675,6 +720,64 @@ func TestServiceFeedTrendingAcceptsGenreFilter(t *testing.T) {
 	_, err := service.Feed(context.Background(), FeedQuery{Section: "trending", GenreID: genreID, Limit: 10})
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
+func TestServiceFeedUsesCacheHit(t *testing.T) {
+	t.Parallel()
+
+	cached := FeedData{Items: []PlayCardData{{ID: "cached-play", Title: "Cached"}}}
+	raw, err := json.Marshal(cached)
+	if err != nil {
+		t.Fatalf("marshal cached feed: %v", err)
+	}
+
+	cacheClient := &fakeCache{values: map[string]string{
+		buildFeedCacheKey("highlighted", nil, "", 20): string(raw),
+	}}
+
+	repoCalls := 0
+	service := NewService(
+		&fakeRepository{listFeedFn: func(context.Context, FeedListParams) ([]PlayListRecord, error) {
+			repoCalls++
+			return nil, nil
+		}},
+		WithCache(cacheClient),
+	)
+
+	data, err := service.Feed(context.Background(), FeedQuery{Section: "highlighted"})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(data.Items) != 1 || data.Items[0].ID != "cached-play" {
+		t.Fatalf("expected cached feed data, got %+v", data.Items)
+	}
+	if repoCalls != 0 {
+		t.Fatalf("expected repository not called on cache hit, got %d", repoCalls)
+	}
+}
+
+func TestServiceFeedCachesMissWithSectionTTL(t *testing.T) {
+	t.Parallel()
+
+	cacheClient := &fakeCache{values: map[string]string{}}
+	now := time.Now().UTC()
+	service := NewService(
+		&fakeRepository{listFeedFn: func(context.Context, FeedListParams) ([]PlayListRecord, error) {
+			return []PlayListRecord{{ID: "00000000-0000-0000-0000-000000000201", Title: "A", TheaterName: "T1", AvailabilityStatus: "in_theaters", PublishedAt: now}}, nil
+		}},
+		WithCache(cacheClient),
+	)
+
+	_, err := service.Feed(context.Background(), FeedQuery{Section: "trending", Limit: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if cacheClient.setCalls != 1 {
+		t.Fatalf("expected cache set once, got %d", cacheClient.setCalls)
+	}
+	if cacheClient.setTTL != feedTrendingTTL {
+		t.Fatalf("expected trending ttl %s, got %s", feedTrendingTTL, cacheClient.setTTL)
 	}
 }
 
@@ -1393,6 +1496,66 @@ func TestServiceDeleteAdminGenreNotFound(t *testing.T) {
 	}})
 
 	err := service.DeleteAdminGenre(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000101")
+	if err == nil {
+		t.Fatalf("expected not found error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND, got %q", appErr.Code)
+	}
+}
+
+func TestServiceDeleteAdminPlayRequiresAdmin(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	err := service.DeleteAdminPlay(context.Background(), "00000000-0000-0000-0000-000000000001", "user", "00000000-0000-0000-0000-000000000901")
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", appErr.Code)
+	}
+}
+
+func TestServiceDeleteAdminPlayInvalidID(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{})
+	err := service.DeleteAdminPlay(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "invalid-play-id")
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+
+	var appErr *sharederrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected app error")
+	}
+
+	if appErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %q", appErr.Code)
+	}
+}
+
+func TestServiceDeleteAdminPlayNotFound(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(&fakeRepository{deletePlayFn: func(ctx context.Context, playID string) error {
+		return gorm.ErrRecordNotFound
+	}})
+
+	err := service.DeleteAdminPlay(context.Background(), "00000000-0000-0000-0000-000000000001", "admin", "00000000-0000-0000-0000-000000000901")
 	if err == nil {
 		t.Fatalf("expected not found error")
 	}

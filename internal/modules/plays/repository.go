@@ -1295,6 +1295,28 @@ func (r *Repository) DeleteTheater(ctx context.Context, theaterID string) error 
 	return nil
 }
 
+func (r *Repository) DeletePlay(ctx context.Context, playID string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	playUUID, err := parseUUID(playID)
+	if err != nil {
+		return err
+	}
+
+	result := r.db.WithContext(ctx).Where("id = ?", playUUID).Delete(&playEntity{})
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, params ListSubmissionsParams) ([]SubmissionRecord, error) {
 	if err := r.ensureDB(); err != nil {
 		return nil, err

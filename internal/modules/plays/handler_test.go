@@ -42,6 +42,7 @@ type fakeService struct {
 	deleteAdminCityFn           func(ctx context.Context, userID string, role string, cityID string) error
 	createAdminTheaterFn        func(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error)
 	deleteAdminTheaterFn        func(ctx context.Context, userID string, role string, theaterID string) error
+	deleteAdminPlayFn           func(ctx context.Context, userID string, role string, playID string) error
 	listAdminSubsFn             func(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
 	getAdminSubByIDFn           func(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	updateAdminSubFn            func(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -282,6 +283,14 @@ func (f *fakeService) CreateAdminTheater(ctx context.Context, userID string, rol
 func (f *fakeService) DeleteAdminTheater(ctx context.Context, userID string, role string, theaterID string) error {
 	if f.deleteAdminTheaterFn != nil {
 		return f.deleteAdminTheaterFn(ctx, userID, role, theaterID)
+	}
+
+	return nil
+}
+
+func (f *fakeService) DeleteAdminPlay(ctx context.Context, userID string, role string, playID string) error {
+	if f.deleteAdminPlayFn != nil {
+		return f.deleteAdminPlayFn(ctx, userID, role, playID)
 	}
 
 	return nil
@@ -983,6 +992,45 @@ func TestHandlerDeleteAdminGenreRequiresAuth(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerDeleteAdminPlayRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope())
+	handler := NewHandler(&fakeService{})
+	router.DELETE("/v1/admin/plays/:playId", handler.DeleteAdminPlay)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/plays/00000000-0000-0000-0000-000000000901", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerDeleteAdminPlaySuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "admin"}, nil
+	}))
+	handler := NewHandler(&fakeService{})
+	router.DELETE("/v1/admin/plays/:playId", handler.DeleteAdminPlay)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/plays/00000000-0000-0000-0000-000000000901", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }
 

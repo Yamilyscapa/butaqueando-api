@@ -47,6 +47,7 @@ type servicePort interface {
 	DeleteAdminCity(ctx context.Context, userID string, role string, cityID string) error
 	CreateAdminTheater(ctx context.Context, userID string, role string, req CreateTheaterRequest) (TheaterData, error)
 	DeleteAdminTheater(ctx context.Context, userID string, role string, theaterID string) error
+	DeleteAdminPlay(ctx context.Context, userID string, role string, playID string) error
 	ListAdminSubmissions(ctx context.Context, userID string, role string, query ListSubmissionsQuery) (SubmissionListData, error)
 	GetAdminSubmissionByID(ctx context.Context, userID string, role string, playID string) (SubmissionData, error)
 	UpdateAdminSubmission(ctx context.Context, userID string, role string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -765,6 +766,22 @@ func (h *Handler) DeleteAdminTheater(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteAdminTheater(c.Request.Context(), userID, role, c.Param("theaterId")); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) DeleteAdminPlay(c *gin.Context) {
+	userID, userOK := middleware.GetAuthenticatedUserID(c)
+	role, roleOK := middleware.GetAuthenticatedRole(c)
+	if !userOK || !roleOK {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	if err := h.service.DeleteAdminPlay(c.Request.Context(), userID, role, c.Param("playId")); err != nil {
 		_ = c.Error(err)
 		return
 	}

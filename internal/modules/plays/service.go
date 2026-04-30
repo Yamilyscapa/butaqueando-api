@@ -2,13 +2,16 @@ package plays
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/butaqueando/api/internal/shared/cache"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
 	"github.com/butaqueando/api/internal/shared/imageproc"
 	"github.com/butaqueando/api/internal/shared/storage"
@@ -27,6 +30,10 @@ const (
 	defaultPlayMediaPrefix = "/v1/media/plays"
 	playMediaMaxWidth      = 1080
 	playMediaMaxHeight     = 1920
+	feedCacheKeyVersion    = "v1"
+	feedHighlightedTTL     = 5 * time.Minute
+	feedTrendingTTL        = 2 * time.Minute
+	feedGenreTTL           = 3 * time.Minute
 )
 
 type repositoryPort interface {
@@ -62,6 +69,7 @@ type repositoryPort interface {
 	DeleteCity(ctx context.Context, cityID string) error
 	CreateTheater(ctx context.Context, cityID string, name string) (TheaterRecord, error)
 	DeleteTheater(ctx context.Context, theaterID string) error
+	DeletePlay(ctx context.Context, playID string) error
 	CountGenresByIDs(ctx context.Context, genreIDs []string) (int64, error)
 	CreateGenre(ctx context.Context, name string) (GenreRecord, error)
 	DeleteGenre(ctx context.Context, genreID string) error
@@ -98,6 +106,7 @@ type Service struct {
 	imageQueue       ImageQueue
 	optimizeEnabled  bool
 	webpQuality      int
+	cache            cache.Client
 }
 
 type ServiceOption func(*Service)
@@ -199,6 +208,12 @@ func WithImageOptimization(enabled bool, webpQuality int) ServiceOption {
 	}
 }
 
+func WithCache(cacheClient cache.Client) ServiceOption {
+	return func(s *Service) {
+		s.cache = cacheClient
+	}
+}
+
 func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 	service := &Service{
 		repo:             repo,
@@ -209,6 +224,7 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 		playMediaBaseURL: defaultPlayMediaPrefix,
 		optimizeEnabled:  true,
 		webpQuality:      80,
+		cache:            cache.NoopClient{},
 	}
 
 	for _, option := range options {
@@ -239,6 +255,10 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 
 	if service.webpQuality <= 0 || service.webpQuality > 100 {
 		service.webpQuality = 80
+	}
+
+	if service.cache == nil {
+		service.cache = cache.NoopClient{}
 	}
 
 	return service
@@ -275,6 +295,13 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 	}
 
 	rawCursor := strings.TrimSpace(query.Cursor)
+	cacheKey := buildFeedCacheKey(section, genreID, rawCursor, limit)
+	if cachedFeed, err := s.getCachedFeed(ctx, cacheKey); err == nil {
+		log.Printf("plays feed cache hit: section=%s key=%s", section, cacheKey)
+		return cachedFeed, nil
+	} else {
+		log.Printf("plays feed cache miss: section=%s key=%s err=%v", section, cacheKey, err)
+	}
 
 	var cursor *playListCursor
 	var trendingCursor *trendingFeedCursor
@@ -301,7 +328,63 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 		return FeedData{}, sharederrors.Internal("failed to load feed", nil)
 	}
 
-	return buildFeedData(records, limit, section, s.playMediaBaseURL)
+	feedData, err := buildFeedData(records, limit, section, s.playMediaBaseURL)
+	if err != nil {
+		return FeedData{}, err
+	}
+
+	if ttl := feedCacheTTL(section); ttl > 0 {
+		if err := s.setCachedFeed(ctx, cacheKey, feedData, ttl); err != nil {
+			log.Printf("plays feed cache set failed: section=%s key=%s err=%v", section, cacheKey, err)
+		}
+	}
+
+	return feedData, nil
+}
+
+func buildFeedCacheKey(section string, genreID *string, cursor string, limit int) string {
+	genreValue := ""
+	if genreID != nil {
+		genreValue = *genreID
+	}
+
+	return fmt.Sprintf("plays:feed:%s:section=%s:genreId=%s:cursor=%s:limit=%d", feedCacheKeyVersion, section, genreValue, cursor, limit)
+}
+
+func feedCacheTTL(section string) time.Duration {
+	switch section {
+	case "highlighted":
+		return feedHighlightedTTL
+	case "trending":
+		return feedTrendingTTL
+	case "genre":
+		return feedGenreTTL
+	default:
+		return 0
+	}
+}
+
+func (s *Service) getCachedFeed(ctx context.Context, key string) (FeedData, error) {
+	raw, err := s.cache.Get(ctx, key)
+	if err != nil {
+		return FeedData{}, err
+	}
+
+	var data FeedData
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return FeedData{}, err
+	}
+
+	return data, nil
+}
+
+func (s *Service) setCachedFeed(ctx context.Context, key string, data FeedData, ttl time.Duration) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	return s.cache.Set(ctx, key, string(raw), ttl)
 }
 
 func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, error) {
@@ -1650,6 +1733,30 @@ func (s *Service) DeleteAdminTheater(ctx context.Context, userID string, role st
 			return sharederrors.NotFound("theater not found", nil)
 		}
 		return sharederrors.Internal("failed to delete theater", nil)
+	}
+
+	return nil
+}
+
+func (s *Service) DeleteAdminPlay(ctx context.Context, userID string, role string, playID string) error {
+	if !isValidAuthUserID(userID) {
+		return sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	if err := requireAdminRole(role); err != nil {
+		return err
+	}
+
+	if !isValidUUID(playID) {
+		return sharederrors.Validation("invalid playId", nil)
+	}
+
+	if err := s.repo.DeletePlay(ctx, playID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return sharederrors.NotFound("play not found", nil)
+		}
+
+		return sharederrors.Internal("failed to delete play", nil)
 	}
 
 	return nil

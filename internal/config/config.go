@@ -33,6 +33,7 @@ type Config struct {
 	JWTRefreshTTL               time.Duration
 	EmailVerificationRequired   bool
 	PasswordResetTokenTTL       time.Duration
+	RedisURL                    string
 	ResendAPIKey                string
 	ResendFromEmail             string
 	ResendTemplateLoginCode     string
@@ -137,6 +138,7 @@ func Load() (Config, error) {
 		JWTRefreshTTL:               jwtRefreshTTL,
 		EmailVerificationRequired:   emailVerificationRequired,
 		PasswordResetTokenTTL:       passwordResetTokenTTL,
+		RedisURL:                    strings.TrimSpace(os.Getenv("REDIS_URL")),
 		ResendAPIKey:                strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		ResendFromEmail:             strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
 		ResendTemplateLoginCode:     envOrDefault("RESEND_TEMPLATE_LOGIN_CODE", "login-code"),

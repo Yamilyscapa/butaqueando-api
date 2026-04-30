@@ -8,6 +8,7 @@ import (
 	"github.com/butaqueando/api/internal/database"
 	apihttp "github.com/butaqueando/api/internal/http"
 	authmodule "github.com/butaqueando/api/internal/modules/auth"
+	"github.com/butaqueando/api/internal/shared/cache"
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/butaqueando/api/internal/shared/worker"
@@ -66,6 +67,15 @@ func Bootstrap() (*Application, error) {
 		imageQueue.Start()
 	}
 
+	mediaCache := cache.Client(cache.NoopClient{})
+	if cfg.RedisURL != "" {
+		redisCache, cacheErr := cache.NewRedisClientFromURL(cfg.RedisURL)
+		if cacheErr != nil {
+			return nil, fmt.Errorf("build redis cache client: %w", cacheErr)
+		}
+		mediaCache = redisCache
+	}
+
 	router := apihttp.NewRouter(apihttp.Dependencies{
 		DB: db,
 		TokenConfig: authmodule.TokenConfig{
@@ -89,6 +99,7 @@ func Bootstrap() (*Application, error) {
 		ImageQueue:                imageQueue,
 		ImageOptimizationEnabled:  cfg.ImageOptimizationEnabled,
 		ImageWebPQuality:          cfg.ImageWebPQuality,
+		MediaCache:                mediaCache,
 	})
 
 	return &Application{
@@ -97,5 +108,6 @@ func Bootstrap() (*Application, error) {
 		DB:     db,
 		SQLDB:  sqlDB,
 		Worker: imageQueue,
+		Cache:  mediaCache,
 	}, nil
 }

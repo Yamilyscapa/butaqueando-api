@@ -3,6 +3,7 @@ package media
 import (
 	"time"
 
+	"github.com/butaqueando/api/internal/shared/cache"
 	"github.com/butaqueando/api/internal/shared/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,11 +16,12 @@ type Dependencies struct {
 	PlaysStorage   storage.Client
 	UsersStorage   storage.Client
 	DownloadURLTTL time.Duration
+	Cache          cache.Client
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	repo := NewRepository(deps.DB)
-	service := NewService(repo, deps.PlaysStorage, deps.UsersStorage, deps.DownloadURLTTL)
+	service := NewService(repo, deps.PlaysStorage, deps.UsersStorage, deps.DownloadURLTTL, deps.Cache)
 	handler := NewHandler(service)
 
 	group := v1.Group(BasePath)

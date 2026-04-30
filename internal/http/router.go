@@ -11,6 +11,7 @@ import (
 	"github.com/butaqueando/api/internal/modules/media"
 	"github.com/butaqueando/api/internal/modules/plays"
 	"github.com/butaqueando/api/internal/modules/users"
+	"github.com/butaqueando/api/internal/shared/cache"
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	"github.com/butaqueando/api/internal/shared/httpx"
 	"github.com/butaqueando/api/internal/shared/storage"
@@ -36,6 +37,7 @@ type Dependencies struct {
 	ImageQueue                *worker.Queue
 	ImageOptimizationEnabled  bool
 	ImageWebPQuality          int
+	MediaCache                cache.Client
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -115,12 +117,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		ImageQueue:        deps.ImageQueue,
 		OptimizeImages:    deps.ImageOptimizationEnabled,
 		WebPQuality:       deps.ImageWebPQuality,
+		Cache:             deps.MediaCache,
 	})
 	media.RegisterRoutes(v1, media.Dependencies{
 		DB:             deps.DB,
 		PlaysStorage:   playsStorage,
 		UsersStorage:   usersStorage,
 		DownloadURLTTL: deps.S3DownloadURLTTL,
+		Cache:          deps.MediaCache,
 	})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 
