@@ -20,6 +20,7 @@ type repositoryPort interface {
 	DeleteFollow(ctx context.Context, followerUserID string, followingUserID string) (bool, error)
 	ListFollowers(ctx context.Context, userID string, after *followCursor, limit int) ([]FollowRecord, error)
 	ListFollowings(ctx context.Context, userID string, after *followCursor, limit int) ([]FollowRecord, error)
+	ListFollowingActivity(ctx context.Context, actorUserID string, after *followingActivityCursor, limit int) ([]FollowingActivityRecord, error)
 }
 
 type Service struct {
@@ -118,6 +119,29 @@ func (s *Service) ListMyFollowings(ctx context.Context, actorUserID string, quer
 	return s.listFollowings(ctx, actorUserID, query)
 }
 
+func (s *Service) ListMyFollowingsActivity(ctx context.Context, actorUserID string, query ListFollowingActivityQuery) (FollowingActivityListData, error) {
+	if !isValidUUID(actorUserID) {
+		return FollowingActivityListData{}, sharederrors.Unauthorized("invalid access token", nil)
+	}
+
+	limit, err := normalizeListLimit(query.Limit)
+	if err != nil {
+		return FollowingActivityListData{}, err
+	}
+
+	cursor, err := decodeFollowingActivityCursor(strings.TrimSpace(query.Cursor))
+	if err != nil {
+		return FollowingActivityListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	records, err := s.repo.ListFollowingActivity(ctx, actorUserID, cursor, limit+1)
+	if err != nil {
+		return FollowingActivityListData{}, sharederrors.Internal("failed to load following activity", nil)
+	}
+
+	return buildFollowingActivityListData(records, limit)
+}
+
 func (s *Service) listFollowers(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error) {
 	if err := s.ensureUserExists(ctx, userID); err != nil {
 		return FollowListData{}, err
@@ -205,6 +229,74 @@ func buildFollowListData(records []FollowRecord, limit int) (FollowListData, err
 	}
 
 	return response, nil
+}
+
+func buildFollowingActivityListData(records []FollowingActivityRecord, limit int) (FollowingActivityListData, error) {
+	hasNext := len(records) > limit
+	if hasNext {
+		records = records[:limit]
+	}
+
+	items := make([]FollowingActivityItemData, 0, len(records))
+	for _, record := range records {
+		item := FollowingActivityItemData{
+			ActivityType: record.ActivityType,
+			ActivityAt:   record.ActivityAt.UTC().Format(time.RFC3339Nano),
+			ActivityID:   record.ActivityID,
+			Actor: FollowingActivityActorData{
+				ID:          record.ActorID,
+				DisplayName: record.ActorDisplayName,
+				Bio:         record.ActorBio,
+			},
+			Play: FollowingActivityPlayData{
+				ID:                 record.PlayID,
+				Title:              record.PlayTitle,
+				TheaterName:        record.TheaterName,
+				City:               record.City,
+				AvailabilityStatus: record.AvailabilityStatus,
+				PublishedAt:        record.PublishedAt.UTC().Format(time.RFC3339Nano),
+				PosterURL:          buildPosterURL(record.PlayID, record.PosterMediaID),
+				AverageRating:      record.AverageRating,
+				ReviewCount:        record.ReviewCount,
+			},
+		}
+
+		if record.ReviewID != nil && record.Rating != nil && record.Body != nil && record.ContainsSpoilers != nil && record.ReviewCreatedAt != nil && record.ReviewUpdatedAt != nil {
+			item.Review = &FollowingActivityReviewData{
+				ID:               *record.ReviewID,
+				Rating:           *record.Rating,
+				Title:            record.Title,
+				Body:             *record.Body,
+				ContainsSpoilers: *record.ContainsSpoilers,
+				CreatedAt:        record.ReviewCreatedAt.UTC().Format(time.RFC3339Nano),
+				UpdatedAt:        record.ReviewUpdatedAt.UTC().Format(time.RFC3339Nano),
+			}
+		}
+
+		items = append(items, item)
+	}
+
+	response := FollowingActivityListData{Items: items}
+	if hasNext && len(records) > 0 {
+		last := records[len(records)-1]
+		nextCursor, err := encodeFollowingActivityCursor(followingActivityCursor{ActivityAt: last.ActivityAt.UTC(), ActivityID: last.ActivityID})
+		if err != nil {
+			return FollowingActivityListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
+		}
+
+		response.NextCursor = &nextCursor
+	}
+
+	return response, nil
+}
+
+func buildPosterURL(playID string, mediaID *string) *string {
+	if mediaID == nil || *mediaID == "" {
+		return nil
+	}
+
+	url := "/v1/media/plays/" + playID + "/" + *mediaID
+	return &url
 }
 
 func normalizeListLimit(rawLimit int) (int, error) {

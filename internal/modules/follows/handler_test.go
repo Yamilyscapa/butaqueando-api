@@ -16,6 +16,7 @@ type fakeService struct {
 	followFn           func(ctx context.Context, actorUserID string, targetUserID string) (FollowActionData, error)
 	unfollowFn         func(ctx context.Context, actorUserID string, targetUserID string) (FollowActionData, error)
 	listMyFollowingsFn func(ctx context.Context, actorUserID string, query ListFollowsQuery) (FollowListData, error)
+	listActivityFn     func(ctx context.Context, actorUserID string, query ListFollowingActivityQuery) (FollowingActivityListData, error)
 	listFollowersFn    func(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error)
 	listFollowingsFn   func(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error)
 }
@@ -42,6 +43,14 @@ func (f *fakeService) ListMyFollowings(ctx context.Context, actorUserID string, 
 	}
 
 	return FollowListData{}, nil
+}
+
+func (f *fakeService) ListMyFollowingsActivity(ctx context.Context, actorUserID string, query ListFollowingActivityQuery) (FollowingActivityListData, error) {
+	if f.listActivityFn != nil {
+		return f.listActivityFn(ctx, actorUserID, query)
+	}
+
+	return FollowingActivityListData{}, nil
 }
 
 func (f *fakeService) ListUserFollowers(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error) {
@@ -170,5 +179,64 @@ func TestHandlerUserFollowersReturnsNotModifiedWhenETagMatches(t *testing.T) {
 
 	if secondRecorder.Code != http.StatusNotModified {
 		t.Fatalf("expected status %d, got %d", http.StatusNotModified, secondRecorder.Code)
+	}
+}
+
+func TestHandlerMyFollowingsActivityRequiresAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{}, nil
+	}))
+	handler := NewHandler(&fakeService{})
+	router.GET("/v1/me/followings/activity", handler.MyFollowingsActivity)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/followings/activity", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestHandlerMyFollowingsActivitySuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.ErrorEnvelope(), middleware.RequireAccessToken(func(token string) (middleware.AccessTokenClaims, error) {
+		return middleware.AccessTokenClaims{UserID: "00000000-0000-0000-0000-000000000001", Role: "user"}, nil
+	}))
+	handler := NewHandler(&fakeService{listActivityFn: func(ctx context.Context, actorUserID string, query ListFollowingActivityQuery) (FollowingActivityListData, error) {
+		return FollowingActivityListData{Items: []FollowingActivityItemData{{
+			ActivityType: "saved",
+			ActivityAt:   "2026-03-31T12:00:00Z",
+			ActivityID:   "00000000-0000-0000-0000-000000000911",
+			Actor: FollowingActivityActorData{
+				ID:          "00000000-0000-0000-0000-000000000101",
+				DisplayName: "Ana",
+			},
+			Play: FollowingActivityPlayData{
+				ID:                 "00000000-0000-0000-0000-000000000201",
+				Title:              "Play One",
+				TheaterName:        "Main",
+				AvailabilityStatus: "in_theaters",
+				PublishedAt:        "2026-03-01T12:00:00Z",
+				ReviewCount:        2,
+			},
+		}}}, nil
+	}})
+	router.GET("/v1/me/followings/activity", handler.MyFollowingsActivity)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/followings/activity?limit=10", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
 }

@@ -14,6 +14,7 @@ type servicePort interface {
 	Follow(ctx context.Context, actorUserID string, targetUserID string) (FollowActionData, error)
 	Unfollow(ctx context.Context, actorUserID string, targetUserID string) (FollowActionData, error)
 	ListMyFollowings(ctx context.Context, actorUserID string, query ListFollowsQuery) (FollowListData, error)
+	ListMyFollowingsActivity(ctx context.Context, actorUserID string, query ListFollowingActivityQuery) (FollowingActivityListData, error)
 	ListUserFollowers(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error)
 	ListUserFollowings(ctx context.Context, userID string, query ListFollowsQuery) (FollowListData, error)
 }
@@ -74,6 +75,28 @@ func (h *Handler) MyFollowings(c *gin.Context) {
 	}
 
 	data, err := h.service.ListMyFollowings(c.Request.Context(), actorUserID, query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteDataWithETag(c, http.StatusOK, data)
+}
+
+func (h *Handler) MyFollowingsActivity(c *gin.Context) {
+	actorUserID, ok := middleware.GetAuthenticatedUserID(c)
+	if !ok {
+		_ = c.Error(sharederrors.Unauthorized("invalid access token", nil))
+		return
+	}
+
+	var query ListFollowingActivityQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(sharederrors.Validation("invalid query params", gin.H{"cause": err.Error()}))
+		return
+	}
+
+	data, err := h.service.ListMyFollowingsActivity(c.Request.Context(), actorUserID, query)
 	if err != nil {
 		_ = c.Error(err)
 		return

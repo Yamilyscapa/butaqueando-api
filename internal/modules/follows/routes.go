@@ -27,6 +27,7 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	me := v1.Group("/me")
 	me.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	me.GET("/followings", handler.MyFollowings)
+	me.GET("/followings/activity", handler.MyFollowingsActivity)
 
 	users.GET("/:userId/followers", handler.UserFollowers)
 	users.GET("/:userId/followings", handler.UserFollowings)

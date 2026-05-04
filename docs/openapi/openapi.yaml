@@ -2298,6 +2298,48 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/me/followings/activity:
+    get:
+      tags: [follows]
+      summary: List following activity for authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Following activity list loaded
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowingActivityListSuccessEnvelope'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/media/plays/{playId}/{mediaId}:
     get:
       tags: [media]
@@ -3502,6 +3544,126 @@ components:
           type: string
           nullable: true
 
+    FollowingActivityActorData:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        bio:
+          type: string
+          nullable: true
+
+    FollowingActivityPlayData:
+      type: object
+      required:
+        - id
+        - title
+        - theaterName
+        - availabilityStatus
+        - publishedAt
+        - reviewCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        theaterName:
+          type: string
+        city:
+          type: string
+          nullable: true
+        availabilityStatus:
+          type: string
+          enum: [in_theaters, archive]
+        publishedAt:
+          type: string
+          format: date-time
+        posterUrl:
+          type: string
+          nullable: true
+        averageRating:
+          type: number
+          format: double
+          nullable: true
+        reviewCount:
+          type: integer
+          format: int64
+
+    FollowingActivityReviewData:
+      type: object
+      required:
+        - id
+        - rating
+        - body
+        - containsSpoilers
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        containsSpoilers:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FollowingActivityItemData:
+      type: object
+      required:
+        - activityType
+        - activityAt
+        - activityId
+        - actor
+        - play
+      properties:
+        activityType:
+          type: string
+          enum: [saved, reviewed, uploaded]
+        activityAt:
+          type: string
+          format: date-time
+        activityId:
+          type: string
+          format: uuid
+        actor:
+          $ref: '#/components/schemas/FollowingActivityActorData'
+        play:
+          $ref: '#/components/schemas/FollowingActivityPlayData'
+        review:
+          allOf:
+            - $ref: '#/components/schemas/FollowingActivityReviewData'
+          nullable: true
+
+    FollowingActivityListData:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FollowingActivityItemData'
+        nextCursor:
+          type: string
+          nullable: true
+
     SignUpRequest:
       type: object
       required:
@@ -4067,6 +4229,20 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/FollowListData'
+        error:
+          $ref: '#/components/schemas/NullValue'
+        requestId:
+          type: string
+
+    FollowingActivityListSuccessEnvelope:
+      type: object
+      required:
+        - data
+        - error
+        - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/FollowingActivityListData'
         error:
           $ref: '#/components/schemas/NullValue'
         requestId:
