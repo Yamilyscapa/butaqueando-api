@@ -34,6 +34,15 @@ const (
 	feedHighlightedTTL     = 5 * time.Minute
 	feedTrendingTTL        = 2 * time.Minute
 	feedGenreTTL           = 3 * time.Minute
+	feedCacheKeyPrefix     = "plays:feed:" + feedCacheKeyVersion
+	refCacheKeyVersion     = "v1"
+	refCacheTTL            = 1 * time.Hour
+	refGenresKeyPrefix     = "ref:" + refCacheKeyVersion + ":genres"
+	refCitiesKeyPrefix     = "ref:" + refCacheKeyVersion + ":cities"
+	refTheatersKeyPrefix   = "ref:" + refCacheKeyVersion + ":theaters"
+	searchCacheKeyVersion  = "v1"
+	searchCacheKeyPrefix   = "plays:search:" + searchCacheKeyVersion
+	searchCacheTTL         = 30 * time.Second
 )
 
 type repositoryPort interface {
@@ -297,10 +306,13 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 	rawCursor := strings.TrimSpace(query.Cursor)
 	cacheKey := buildFeedCacheKey(section, genreID, rawCursor, limit)
 	if cachedFeed, err := s.getCachedFeed(ctx, cacheKey); err == nil {
-		log.Printf("plays feed cache hit: section=%s key=%s", section, cacheKey)
+		cache.RecordHit("plays:feed")
 		return cachedFeed, nil
+	} else if errors.Is(err, cache.ErrCacheMiss) || errors.Is(err, cache.ErrClientNotConfigured) {
+		cache.RecordMiss("plays:feed")
 	} else {
-		log.Printf("plays feed cache miss: section=%s key=%s err=%v", section, cacheKey, err)
+		cache.RecordError("plays:feed")
+		log.Printf("plays feed cache get failed: section=%s key=%s err=%v", section, cacheKey, err)
 	}
 
 	var cursor *playListCursor
@@ -335,7 +347,14 @@ func (s *Service) Feed(ctx context.Context, query FeedQuery) (FeedData, error) {
 
 	if ttl := feedCacheTTL(section); ttl > 0 {
 		if err := s.setCachedFeed(ctx, cacheKey, feedData, ttl); err != nil {
-			log.Printf("plays feed cache set failed: section=%s key=%s err=%v", section, cacheKey, err)
+			if errors.Is(err, cache.ErrClientNotConfigured) {
+				cache.RecordMiss("plays:feed")
+			} else {
+				cache.RecordError("plays:feed")
+				log.Printf("plays feed cache set failed: section=%s key=%s err=%v", section, cacheKey, err)
+			}
+		} else {
+			cache.RecordSet("plays:feed")
 		}
 	}
 
@@ -387,6 +406,66 @@ func (s *Service) setCachedFeed(ctx context.Context, key string, data FeedData, 
 	return s.cache.Set(ctx, key, string(raw), ttl)
 }
 
+func (s *Service) invalidateFeedCache(ctx context.Context) {
+	deleted, err := s.cache.DelByPattern(ctx, feedCacheKeyPrefix+":*")
+	if err != nil {
+		log.Printf("plays feed cache invalidate failed: err=%v", err)
+		return
+	}
+	if deleted > 0 {
+		log.Printf("plays feed cache invalidated: deleted=%d", deleted)
+	}
+}
+
+func (s *Service) invalidateRefCache(ctx context.Context, prefixes ...string) {
+	for _, prefix := range prefixes {
+		if _, err := s.cache.DelByPattern(ctx, prefix+":*"); err != nil {
+			log.Printf("ref cache invalidate failed: prefix=%s err=%v", prefix, err)
+		}
+	}
+}
+
+func getCachedJSON[T any](ctx context.Context, c cache.Client, namespace string, key string) (T, error) {
+	var zero T
+	raw, err := c.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, cache.ErrCacheMiss) || errors.Is(err, cache.ErrClientNotConfigured) {
+			cache.RecordMiss(namespace)
+		} else {
+			cache.RecordError(namespace)
+		}
+		return zero, err
+	}
+
+	var data T
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		cache.RecordError(namespace)
+		return zero, err
+	}
+	cache.RecordHit(namespace)
+	return data, nil
+}
+
+func setCachedJSON[T any](ctx context.Context, c cache.Client, namespace string, key string, data T, ttl time.Duration) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		cache.RecordError(namespace)
+		return err
+	}
+	if err := c.Set(ctx, key, string(raw), ttl); err != nil {
+		if !errors.Is(err, cache.ErrClientNotConfigured) {
+			cache.RecordError(namespace)
+		}
+		return err
+	}
+	cache.RecordSet(namespace)
+	return nil
+}
+
+func buildRefCacheKey(prefix string, parts ...string) string {
+	return prefix + ":" + strings.Join(parts, ":")
+}
+
 func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, error) {
 	q := strings.TrimSpace(query.Q)
 	genreIDRaw := strings.TrimSpace(query.GenreID)
@@ -429,9 +508,15 @@ func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, er
 		return SearchData{}, err
 	}
 
-	cursor, err := decodePlayListCursor(strings.TrimSpace(query.Cursor))
+	rawCursor := strings.TrimSpace(query.Cursor)
+	cursor, err := decodePlayListCursor(rawCursor)
 	if err != nil {
 		return SearchData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	cacheKey := buildSearchCacheKey(q, genreIDRaw, city, theater, availabilityStatus, rawCursor, limit)
+	if cached, err := getCachedJSON[SearchData](ctx, s.cache, "plays:search", cacheKey); err == nil {
+		return cached, nil
 	}
 
 	records, err := s.repo.SearchPublishedPlays(ctx, SearchListParams{
@@ -452,7 +537,26 @@ func (s *Service) Search(ctx context.Context, query SearchQuery) (SearchData, er
 		return SearchData{}, err
 	}
 
-	return SearchData{Items: data.Items, NextCursor: data.NextCursor}, nil
+	response := SearchData{Items: data.Items, NextCursor: data.NextCursor}
+
+	if setErr := setCachedJSON(ctx, s.cache, "plays:search", cacheKey, response, searchCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
+		log.Printf("search cache set failed: key=%s err=%v", cacheKey, setErr)
+	}
+
+	return response, nil
+}
+
+func buildSearchCacheKey(q, genreID, city, theater, availability, cursor string, limit int) string {
+	return fmt.Sprintf("%s:q=%s:genreId=%s:city=%s:theater=%s:availability=%s:cursor=%s:limit=%d",
+		searchCacheKeyPrefix,
+		strings.ToLower(q),
+		genreID,
+		strings.ToLower(city),
+		strings.ToLower(theater),
+		availability,
+		cursor,
+		limit,
+	)
 }
 
 func (s *Service) GetByID(ctx context.Context, playID string) (PlayDetailsData, error) {
@@ -1464,9 +1568,15 @@ func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreL
 		return GenreListData{}, err
 	}
 
-	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	rawCursor := strings.TrimSpace(query.Cursor)
+	cursor, err := decodeGenreListCursor(rawCursor)
 	if err != nil {
 		return GenreListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	cacheKey := buildRefCacheKey(refGenresKeyPrefix, fmt.Sprintf("cursor=%s", rawCursor), fmt.Sprintf("limit=%d", limit))
+	if cached, err := getCachedJSON[GenreListData](ctx, s.cache, "ref:genres", cacheKey); err == nil {
+		return cached, nil
 	}
 
 	records, err := s.repo.ListGenres(ctx, ListGenresParams{After: cursor, Limit: limit + 1})
@@ -1474,7 +1584,16 @@ func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreL
 		return GenreListData{}, sharederrors.Internal("failed to load genres", nil)
 	}
 
-	return buildGenreListData(records, limit)
+	data, err := buildGenreListData(records, limit)
+	if err != nil {
+		return GenreListData{}, err
+	}
+
+	if setErr := setCachedJSON(ctx, s.cache, "ref:genres", cacheKey, data, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
+		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
+	}
+
+	return data, nil
 }
 
 func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityListData, error) {
@@ -1483,9 +1602,15 @@ func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityLi
 		return CityListData{}, err
 	}
 
-	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	rawCursor := strings.TrimSpace(query.Cursor)
+	cursor, err := decodeGenreListCursor(rawCursor)
 	if err != nil {
 		return CityListData{}, sharederrors.Validation("invalid cursor", nil)
+	}
+
+	cacheKey := buildRefCacheKey(refCitiesKeyPrefix, fmt.Sprintf("cursor=%s", rawCursor), fmt.Sprintf("limit=%d", limit))
+	if cached, err := getCachedJSON[CityListData](ctx, s.cache, "ref:cities", cacheKey); err == nil {
+		return cached, nil
 	}
 
 	records, err := s.repo.ListCities(ctx, ListCitiesParams{After: cursor, Limit: limit + 1})
@@ -1513,6 +1638,10 @@ func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityLi
 		response.NextCursor = &nextCursor
 	}
 
+	if setErr := setCachedJSON(ctx, s.cache, "ref:cities", cacheKey, response, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
+		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
+	}
+
 	return response, nil
 }
 
@@ -1522,17 +1651,28 @@ func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (Th
 		return TheaterListData{}, err
 	}
 
-	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
+	rawCursor := strings.TrimSpace(query.Cursor)
+	cursor, err := decodeGenreListCursor(rawCursor)
 	if err != nil {
 		return TheaterListData{}, sharederrors.Validation("invalid cursor", nil)
 	}
 
+	rawCityID := strings.TrimSpace(query.CityID)
 	var cityID *string
-	if rawCityID := strings.TrimSpace(query.CityID); rawCityID != "" {
+	if rawCityID != "" {
 		if !isValidUUID(rawCityID) {
 			return TheaterListData{}, sharederrors.Validation("invalid cityId", nil)
 		}
 		cityID = &rawCityID
+	}
+
+	cacheKey := buildRefCacheKey(refTheatersKeyPrefix,
+		fmt.Sprintf("cityId=%s", rawCityID),
+		fmt.Sprintf("cursor=%s", rawCursor),
+		fmt.Sprintf("limit=%d", limit),
+	)
+	if cached, err := getCachedJSON[TheaterListData](ctx, s.cache, "ref:theaters", cacheKey); err == nil {
+		return cached, nil
 	}
 
 	records, err := s.repo.ListTheaters(ctx, ListTheatersParams{CityID: cityID, After: cursor, Limit: limit + 1})
@@ -1558,6 +1698,10 @@ func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (Th
 			return TheaterListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
 		}
 		response.NextCursor = &nextCursor
+	}
+
+	if setErr := setCachedJSON(ctx, s.cache, "ref:theaters", cacheKey, response, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
+		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
 	}
 
 	return response, nil
@@ -1613,6 +1757,8 @@ func (s *Service) CreateAdminGenre(ctx context.Context, userID string, role stri
 		return GenreData{}, sharederrors.Internal("failed to create genre", nil)
 	}
 
+	s.invalidateRefCache(ctx, refGenresKeyPrefix)
+
 	return mapGenreRecord(record), nil
 }
 
@@ -1642,6 +1788,8 @@ func (s *Service) DeleteAdminGenre(ctx context.Context, userID string, role stri
 		return sharederrors.Internal("failed to delete genre", nil)
 	}
 
+	s.invalidateRefCache(ctx, refGenresKeyPrefix)
+
 	return nil
 }
 
@@ -1666,6 +1814,8 @@ func (s *Service) CreateAdminCity(ctx context.Context, userID string, role strin
 		return CityData{}, sharederrors.Internal("failed to create city", nil)
 	}
 
+	s.invalidateRefCache(ctx, refCitiesKeyPrefix)
+
 	return CityData{ID: record.ID, Name: record.Name}, nil
 }
 
@@ -1686,6 +1836,8 @@ func (s *Service) DeleteAdminCity(ctx context.Context, userID string, role strin
 		}
 		return sharederrors.Internal("failed to delete city", nil)
 	}
+
+	s.invalidateRefCache(ctx, refCitiesKeyPrefix, refTheatersKeyPrefix)
 
 	return nil
 }
@@ -1714,6 +1866,8 @@ func (s *Service) CreateAdminTheater(ctx context.Context, userID string, role st
 		return TheaterData{}, sharederrors.Internal("failed to create theater", nil)
 	}
 
+	s.invalidateRefCache(ctx, refTheatersKeyPrefix)
+
 	return TheaterData{ID: record.ID, CityID: record.CityID, Name: record.Name}, nil
 }
 
@@ -1734,6 +1888,8 @@ func (s *Service) DeleteAdminTheater(ctx context.Context, userID string, role st
 		}
 		return sharederrors.Internal("failed to delete theater", nil)
 	}
+
+	s.invalidateRefCache(ctx, refTheatersKeyPrefix)
 
 	return nil
 }
@@ -1758,6 +1914,8 @@ func (s *Service) DeleteAdminPlay(ctx context.Context, userID string, role strin
 
 		return sharederrors.Internal("failed to delete play", nil)
 	}
+
+	s.invalidateFeedCache(ctx)
 
 	return nil
 }
@@ -1871,6 +2029,8 @@ func (s *Service) ApproveSubmission(ctx context.Context, userID string, role str
 		return SubmissionData{}, sharederrors.Internal("failed to approve submission", nil)
 	}
 
+	s.invalidateFeedCache(ctx)
+
 	return s.mapSubmissionWithGenresAndMedia(ctx, record)
 }
 
@@ -1913,6 +2073,8 @@ func (s *Service) RejectSubmission(ctx context.Context, userID string, role stri
 
 		return SubmissionData{}, sharederrors.Internal("failed to reject submission", nil)
 	}
+
+	s.invalidateFeedCache(ctx)
 
 	return s.mapSubmissionWithGenresAndMedia(ctx, record)
 }

@@ -18,11 +18,15 @@ import (
 type fakePresignStorage struct{}
 
 type fakeCache struct {
-	values   map[string]string
-	getErr   error
-	setErr   error
-	setCalls int
-	setTTL   time.Duration
+	values     map[string]string
+	getErr     error
+	setErr     error
+	setCalls   int
+	setTTL     time.Duration
+	delCalls   int
+	delKeys    []string
+	delPatts   []string
+	delErr     error
 }
 
 func (f *fakeCache) Get(_ context.Context, key string) (string, error) {
@@ -47,6 +51,41 @@ func (f *fakeCache) Set(_ context.Context, key string, value string, ttl time.Du
 	}
 	f.values[key] = value
 	return nil
+}
+
+func (f *fakeCache) Del(_ context.Context, keys ...string) error {
+	f.delCalls++
+	f.delKeys = append(f.delKeys, keys...)
+	if f.delErr != nil {
+		return f.delErr
+	}
+	if f.values == nil {
+		return nil
+	}
+	for _, key := range keys {
+		delete(f.values, key)
+	}
+	return nil
+}
+
+func (f *fakeCache) DelByPattern(_ context.Context, pattern string) (int, error) {
+	f.delCalls++
+	f.delPatts = append(f.delPatts, pattern)
+	if f.delErr != nil {
+		return 0, f.delErr
+	}
+	if f.values == nil {
+		return 0, nil
+	}
+	prefix := strings.TrimSuffix(pattern, "*")
+	deleted := 0
+	for key := range f.values {
+		if strings.HasPrefix(key, prefix) {
+			delete(f.values, key)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (f *fakeCache) Close() error { return nil }
@@ -778,6 +817,61 @@ func TestServiceFeedCachesMissWithSectionTTL(t *testing.T) {
 	}
 	if cacheClient.setTTL != feedTrendingTTL {
 		t.Fatalf("expected trending ttl %s, got %s", feedTrendingTTL, cacheClient.setTTL)
+	}
+}
+
+func TestServiceListGenresUsesCacheHit(t *testing.T) {
+	t.Parallel()
+
+	cached := GenreListData{Items: []GenreData{{ID: "00000000-0000-0000-0000-000000000001", Name: "Drama"}}}
+	raw, err := json.Marshal(cached)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	cacheKey := buildRefCacheKey(refGenresKeyPrefix, "cursor=", "limit=20")
+	cacheClient := &fakeCache{values: map[string]string{cacheKey: string(raw)}}
+
+	repoCalls := 0
+	service := NewService(
+		&fakeRepository{listGenresFn: func(context.Context, ListGenresParams) ([]GenreRecord, error) {
+			repoCalls++
+			return nil, nil
+		}},
+		WithCache(cacheClient),
+	)
+
+	data, err := service.ListGenres(context.Background(), ListGenresQuery{})
+	if err != nil {
+		t.Fatalf("expected success: %v", err)
+	}
+	if len(data.Items) != 1 || data.Items[0].Name != "Drama" {
+		t.Fatalf("expected cached payload, got %+v", data)
+	}
+	if repoCalls != 0 {
+		t.Fatalf("expected repo not called on cache hit, got %d", repoCalls)
+	}
+}
+
+func TestServiceListGenresCachesMiss(t *testing.T) {
+	t.Parallel()
+
+	cacheClient := &fakeCache{values: map[string]string{}}
+	service := NewService(
+		&fakeRepository{listGenresFn: func(context.Context, ListGenresParams) ([]GenreRecord, error) {
+			return []GenreRecord{{ID: "00000000-0000-0000-0000-000000000001", Name: "Drama"}}, nil
+		}},
+		WithCache(cacheClient),
+	)
+
+	if _, err := service.ListGenres(context.Background(), ListGenresQuery{}); err != nil {
+		t.Fatalf("expected success: %v", err)
+	}
+	if cacheClient.setCalls != 1 {
+		t.Fatalf("expected one cache set, got %d", cacheClient.setCalls)
+	}
+	if cacheClient.setTTL != refCacheTTL {
+		t.Fatalf("expected ttl %s, got %s", refCacheTTL, cacheClient.setTTL)
 	}
 }
 

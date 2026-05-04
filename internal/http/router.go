@@ -128,5 +128,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 
+	internalGroup := router.Group("/internal")
+	internalGroup.GET("/metrics", func(c *gin.Context) {
+		httpx.WriteData(c, http.StatusOK, gin.H{"cache": cache.Snapshot()})
+	})
+
 	return router
 }

@@ -62,10 +62,15 @@ func (s *Service) GetPlayMediaRedirectURL(ctx context.Context, playID string, me
 
 	cacheKey := buildPlayMediaRedirectCacheKey(playID, mediaID)
 	if cachedURL, err := s.cache.Get(ctx, cacheKey); err == nil && cachedURL != "" {
-		log.Printf("media redirect cache hit: key=%s", cacheKey)
+		cache.RecordHit("media:redirect")
 		return cachedURL, nil
 	} else if err != nil {
-		log.Printf("media redirect cache miss: key=%s err=%v", cacheKey, err)
+		if errors.Is(err, cache.ErrCacheMiss) || errors.Is(err, cache.ErrClientNotConfigured) {
+			cache.RecordMiss("media:redirect")
+		} else {
+			cache.RecordError("media:redirect")
+			log.Printf("media redirect cache get failed: key=%s err=%v", cacheKey, err)
+		}
 	}
 
 	objectKey, err := s.repo.GetPublishedPlayMediaObjectKey(ctx, playID, mediaID)
@@ -84,7 +89,12 @@ func (s *Service) GetPlayMediaRedirectURL(ctx context.Context, playID string, me
 
 	if ttl := cacheTTLForRedirect(s.downloadURLTTL); ttl > 0 {
 		if err := s.cache.Set(ctx, cacheKey, url, ttl); err != nil {
+			if !errors.Is(err, cache.ErrClientNotConfigured) {
+				cache.RecordError("media:redirect")
+			}
 			log.Printf("media redirect cache set failed: key=%s err=%v", cacheKey, err)
+		} else {
+			cache.RecordSet("media:redirect")
 		}
 	} else {
 		log.Printf("media redirect cache skipped due to ttl: key=%s download_ttl=%s", cacheKey, s.downloadURLTTL)

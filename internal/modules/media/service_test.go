@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,31 @@ func (f *fakeCache) Set(_ context.Context, key string, value string, ttl time.Du
 	}
 	f.values[key] = value
 	return nil
+}
+
+func (f *fakeCache) Del(_ context.Context, keys ...string) error {
+	if f.values == nil {
+		return nil
+	}
+	for _, key := range keys {
+		delete(f.values, key)
+	}
+	return nil
+}
+
+func (f *fakeCache) DelByPattern(_ context.Context, pattern string) (int, error) {
+	if f.values == nil {
+		return 0, nil
+	}
+	prefix := strings.TrimSuffix(pattern, "*")
+	deleted := 0
+	for key := range f.values {
+		if strings.HasPrefix(key, prefix) {
+			delete(f.values, key)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (f *fakeCache) Close() error { return nil }

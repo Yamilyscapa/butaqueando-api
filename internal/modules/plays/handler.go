@@ -3,6 +3,7 @@ package plays
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/butaqueando/api/internal/http/middleware"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
@@ -85,6 +86,7 @@ func (h *Handler) Feed(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(60*time.Second))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
@@ -101,6 +103,7 @@ func (h *Handler) Search(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(30*time.Second))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
@@ -111,6 +114,7 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(5*time.Minute))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
@@ -324,6 +328,7 @@ func (h *Handler) ListGenres(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
@@ -340,6 +345,7 @@ func (h *Handler) ListCities(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
@@ -356,6 +362,7 @@ func (h *Handler) ListTheaters(c *gin.Context) {
 		return
 	}
 
+	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
 	httpx.WriteDataWithETag(c, http.StatusOK, data)
 }
 
