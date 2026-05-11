@@ -41,8 +41,6 @@ type Config struct {
 	ResendFromEmail             string
 	ResendTemplateLoginCode     string
 	ResendTemplatePasswordReset string
-	EmailVerificationRedirect   string
-	PasswordResetRedirect       string
 }
 
 type S3BucketConfig struct {
@@ -161,8 +159,6 @@ func Load() (Config, error) {
 		ResendFromEmail:             strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
 		ResendTemplateLoginCode:     envOrDefault("RESEND_TEMPLATE_LOGIN_CODE", "login-code"),
 		ResendTemplatePasswordReset: envOrDefault("RESEND_TEMPLATE_PASSWORD_RESET", "reset-password"),
-		EmailVerificationRedirect:   strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_REDIRECT_BASE")),
-		PasswordResetRedirect:       strings.TrimSpace(os.Getenv("PASSWORD_RESET_REDIRECT_BASE")),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -191,10 +187,6 @@ func Load() (Config, error) {
 
 	if cfg.AppEnv == "production" && !cfg.EmailVerificationRequired {
 		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REQUIRED must be true in production")
-	}
-
-	if cfg.EmailVerificationRequired && cfg.EmailVerificationRedirect == "" {
-		return Config{}, fmt.Errorf("EMAIL_VERIFICATION_REDIRECT_BASE is required when EMAIL_VERIFICATION_REQUIRED is true")
 	}
 
 	if cfg.PasswordResetTokenTTL <= 0 {
@@ -244,10 +236,6 @@ func Load() (Config, error) {
 
 		if cfg.ResendFromEmail == "" {
 			return Config{}, fmt.Errorf("RESEND_FROM_EMAIL is required when EMAIL_VERIFICATION_REQUIRED is true in production")
-		}
-
-		if cfg.PasswordResetRedirect == "" {
-			return Config{}, fmt.Errorf("PASSWORD_RESET_REDIRECT_BASE is required in production")
 		}
 	}
 

@@ -17,8 +17,6 @@ type Dependencies struct {
 	EmailVerificationRequired bool
 	ExposeVerificationToken   bool
 	VerificationEmailSender   sharedemail.Sender
-	EmailVerificationRedirect string
-	PasswordResetRedirect     string
 	PasswordResetTokenTTL     time.Duration
 }
 
@@ -30,8 +28,6 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 		EmailVerificationRequired: &emailVerificationRequired,
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
 		VerificationEmailSender:   deps.VerificationEmailSender,
-		EmailVerificationRedirect: deps.EmailVerificationRedirect,
-		PasswordResetRedirect:     deps.PasswordResetRedirect,
 		PasswordResetTokenTTL:     deps.PasswordResetTokenTTL,
 	})
 	handler := NewHandler(service)

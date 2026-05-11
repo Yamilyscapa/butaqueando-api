@@ -51,14 +51,14 @@ func NewResendSender(apiKey string, from string, verificationTemplateID string, 
 }
 
 func (s *ResendSender) SendVerificationEmail(ctx context.Context, input VerificationEmailInput) error {
-	return s.sendTemplateEmail(ctx, input.ToEmail, input.Redirect, input.IdempotencyKey, s.verificationTemplateID)
+	return s.sendTemplateEmail(ctx, input.ToEmail, input.Code, input.IdempotencyKey, s.verificationTemplateID)
 }
 
 func (s *ResendSender) SendPasswordResetEmail(ctx context.Context, input PasswordResetEmailInput) error {
-	return s.sendTemplateEmail(ctx, input.ToEmail, input.Redirect, input.IdempotencyKey, s.passwordResetTemplateID)
+	return s.sendTemplateEmail(ctx, input.ToEmail, input.Code, input.IdempotencyKey, s.passwordResetTemplateID)
 }
 
-func (s *ResendSender) sendTemplateEmail(ctx context.Context, toEmail string, redirect string, idempotencyKey string, templateID string) error {
+func (s *ResendSender) sendTemplateEmail(ctx context.Context, toEmail string, code string, idempotencyKey string, templateID string) error {
 	if s == nil || s.client == nil {
 		return fmt.Errorf("email sender is not configured")
 	}
@@ -68,9 +68,9 @@ func (s *ResendSender) sendTemplateEmail(ctx context.Context, toEmail string, re
 		return fmt.Errorf("recipient email is required")
 	}
 
-	redirect = strings.TrimSpace(redirect)
-	if redirect == "" {
-		return fmt.Errorf("verification redirect is required")
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return fmt.Errorf("verification code is required")
 	}
 
 	templateID = strings.TrimSpace(templateID)
@@ -84,7 +84,7 @@ func (s *ResendSender) sendTemplateEmail(ctx context.Context, toEmail string, re
 		Template: &resend.EmailTemplate{
 			Id: templateID,
 			Variables: map[string]interface{}{
-				"redirect": redirect,
+				"code": code,
 			},
 		},
 	}

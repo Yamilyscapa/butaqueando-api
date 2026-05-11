@@ -4,13 +4,13 @@ import "context"
 
 type VerificationEmailInput struct {
 	ToEmail        string
-	Redirect       string
+	Code           string
 	IdempotencyKey string
 }
 
 type PasswordResetEmailInput struct {
 	ToEmail        string
-	Redirect       string
+	Code           string
 	IdempotencyKey string
 }
 

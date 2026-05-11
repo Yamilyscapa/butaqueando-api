@@ -206,7 +206,7 @@ func TestHandlerVerifyEmailSuccess(t *testing.T) {
 	}})
 	router.POST("/v1/auth/verify-email", handler.VerifyEmail)
 
-	body := bytes.NewBufferString(`{"token":"verification-token"}`)
+	body := bytes.NewBufferString(`{"email":"ana@butaqueando.local","token":"123456"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email", body)
 	request.Header.Set("Content-Type", "application/json")
@@ -272,7 +272,7 @@ func TestHandlerResetPasswordSuccess(t *testing.T) {
 	}})
 	router.POST("/v1/auth/reset-password", handler.ResetPassword)
 
-	body := bytes.NewBufferString(`{"token":"reset-token","newPassword":"password123"}`)
+	body := bytes.NewBufferString(`{"email":"ana@butaqueando.local","token":"123456","newPassword":"password123"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", body)
 	request.Header.Set("Content-Type", "application/json")

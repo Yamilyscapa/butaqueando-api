@@ -29,8 +29,6 @@ func TestLoadRejectsDisabledEmailVerificationInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "false")
-	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
-	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "https://app.butaqueando.com/reset-password")
 
 	_, err := Load()
 	if err == nil {
@@ -42,8 +40,6 @@ func TestLoadAllowsEnabledEmailVerificationInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	setCommonEnv(t)
 	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
-	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
-	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "https://app.butaqueando.com/reset-password")
 	t.Setenv("RESEND_API_KEY", "re_test_123")
 	t.Setenv("RESEND_FROM_EMAIL", "Butaqueando <noreply@butaqueando.com>")
 
@@ -54,32 +50,5 @@ func TestLoadAllowsEnabledEmailVerificationInProduction(t *testing.T) {
 
 	if !cfg.EmailVerificationRequired {
 		t.Fatalf("expected email verification required true")
-	}
-}
-
-func TestLoadRejectsMissingPasswordResetRedirectInProduction(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
-	setCommonEnv(t)
-	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
-	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "https://app.butaqueando.com/verify-email")
-	t.Setenv("PASSWORD_RESET_REDIRECT_BASE", "")
-	t.Setenv("RESEND_API_KEY", "re_test_123")
-	t.Setenv("RESEND_FROM_EMAIL", "Butaqueando <noreply@butaqueando.com>")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatalf("expected password reset redirect validation error")
-	}
-}
-
-func TestLoadRejectsMissingVerificationRedirectWhenVerificationRequired(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
-	setCommonEnv(t)
-	t.Setenv("EMAIL_VERIFICATION_REQUIRED", "true")
-	t.Setenv("EMAIL_VERIFICATION_REDIRECT_BASE", "")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatalf("expected redirect base validation error")
 	}
 }

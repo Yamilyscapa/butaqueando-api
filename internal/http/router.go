@@ -26,8 +26,6 @@ type Dependencies struct {
 	EmailVerificationRequired bool
 	ExposeVerificationToken   bool
 	VerificationEmailSender   sharedemail.Sender
-	EmailVerificationRedirect string
-	PasswordResetRedirect     string
 	PasswordResetTokenTTL     time.Duration
 	PlaysStorage              storage.Client
 	UsersStorage              storage.Client
@@ -97,8 +95,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		EmailVerificationRequired: deps.EmailVerificationRequired,
 		ExposeVerificationToken:   deps.ExposeVerificationToken,
 		VerificationEmailSender:   deps.VerificationEmailSender,
-		EmailVerificationRedirect: deps.EmailVerificationRedirect,
-		PasswordResetRedirect:     deps.PasswordResetRedirect,
 		PasswordResetTokenTTL:     deps.PasswordResetTokenTTL,
 	})
 	users.RegisterRoutes(v1, users.Dependencies{

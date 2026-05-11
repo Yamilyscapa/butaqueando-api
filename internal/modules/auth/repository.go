@@ -42,6 +42,8 @@ type Repository struct {
 	db *gorm.DB
 }
 
+const defaultOTPAttempts int16 = 5
+
 var (
 	ErrEmailVerificationTokenInvalid  = errors.New("email verification token invalid")
 	ErrEmailVerificationTokenExpired  = errors.New("email verification token expired")
@@ -244,10 +246,11 @@ func (r *Repository) CreatePendingUser(ctx context.Context, input CreatePendingU
 		}
 
 		verificationToken := emailVerificationTokenEntity{
-			UserID:    createdUser.ID,
-			TokenHash: input.EmailVerificationTokenHash,
-			ExpiresAt: input.EmailVerificationExpiresAt,
-			CreatedAt: input.CreatedAt,
+			UserID:            createdUser.ID,
+			TokenHash:         input.EmailVerificationTokenHash,
+			AttemptsRemaining: defaultOTPAttempts,
+			ExpiresAt:         input.EmailVerificationExpiresAt,
+			CreatedAt:         input.CreatedAt,
 		}
 		return tx.Create(&verificationToken).Error
 	})
@@ -258,14 +261,21 @@ func (r *Repository) CreatePendingUser(ctx context.Context, input CreatePendingU
 	return mapUserEntityToRecord(createdUser), nil
 }
 
-func (r *Repository) VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error {
+func (r *Repository) ConsumeEmailVerificationOTP(ctx context.Context, userID string, tokenHash string, now time.Time) error {
 	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
 		return err
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var token emailVerificationTokenEntity
-		err := tx.Where("token_hash = ?", tokenHash).Take(&token).Error
+		err := tx.Where("user_id = ? AND consumed_at IS NULL", userUUID).
+			Order("created_at DESC").
+			Take(&token).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrEmailVerificationTokenInvalid
@@ -274,12 +284,23 @@ func (r *Repository) VerifyEmailByTokenHash(ctx context.Context, tokenHash strin
 			return err
 		}
 
-		if token.ConsumedAt != nil {
-			return ErrEmailVerificationTokenConsumed
-		}
-
 		if !token.ExpiresAt.After(now) {
 			return ErrEmailVerificationTokenExpired
+		}
+
+		if token.TokenHash != tokenHash {
+			updates := map[string]any{"attempts_remaining": gorm.Expr("attempts_remaining - 1")}
+			if token.AttemptsRemaining <= 1 {
+				updates["consumed_at"] = now
+			}
+
+			if err := tx.Model(&emailVerificationTokenEntity{}).
+				Where("id = ?", token.ID).
+				Updates(updates).Error; err != nil {
+				return err
+			}
+
+			return ErrEmailVerificationTokenInvalid
 		}
 
 		consumeResult := tx.Model(&emailVerificationTokenEntity{}).
@@ -310,10 +331,11 @@ func (r *Repository) CreateEmailVerificationToken(ctx context.Context, userID st
 	}
 
 	entity := emailVerificationTokenEntity{
-		UserID:    userUUID,
-		TokenHash: tokenHash,
-		ExpiresAt: expiresAt,
-		CreatedAt: createdAt,
+		UserID:            userUUID,
+		TokenHash:         tokenHash,
+		AttemptsRemaining: defaultOTPAttempts,
+		ExpiresAt:         expiresAt,
+		CreatedAt:         createdAt,
 	}
 
 	return r.db.WithContext(ctx).Create(&entity).Error
@@ -346,10 +368,11 @@ func (r *Repository) CreatePasswordResetToken(ctx context.Context, userID string
 	}
 
 	entity := passwordResetTokenEntity{
-		UserID:    userUUID,
-		TokenHash: tokenHash,
-		ExpiresAt: expiresAt,
-		CreatedAt: createdAt,
+		UserID:            userUUID,
+		TokenHash:         tokenHash,
+		AttemptsRemaining: defaultOTPAttempts,
+		ExpiresAt:         expiresAt,
+		CreatedAt:         createdAt,
 	}
 
 	return r.db.WithContext(ctx).Create(&entity).Error
@@ -371,14 +394,21 @@ func (r *Repository) InvalidatePasswordResetTokensForUser(ctx context.Context, u
 		Updates(map[string]any{"consumed_at": now}).Error
 }
 
-func (r *Repository) ResetPasswordByTokenHash(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error {
+func (r *Repository) ConsumePasswordResetOTP(ctx context.Context, userID string, tokenHash string, passwordHash string, now time.Time) error {
 	if err := r.ensureDB(); err != nil {
+		return err
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
 		return err
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var token passwordResetTokenEntity
-		err := tx.Where("token_hash = ?", tokenHash).Take(&token).Error
+		err := tx.Where("user_id = ? AND consumed_at IS NULL", userUUID).
+			Order("created_at DESC").
+			Take(&token).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrPasswordResetTokenInvalid
@@ -387,12 +417,23 @@ func (r *Repository) ResetPasswordByTokenHash(ctx context.Context, tokenHash str
 			return err
 		}
 
-		if token.ConsumedAt != nil {
-			return ErrPasswordResetTokenConsumed
-		}
-
 		if !token.ExpiresAt.After(now) {
 			return ErrPasswordResetTokenExpired
+		}
+
+		if token.TokenHash != tokenHash {
+			updates := map[string]any{"attempts_remaining": gorm.Expr("attempts_remaining - 1")}
+			if token.AttemptsRemaining <= 1 {
+				updates["consumed_at"] = now
+			}
+
+			if err := tx.Model(&passwordResetTokenEntity{}).
+				Where("id = ?", token.ID).
+				Updates(updates).Error; err != nil {
+				return err
+			}
+
+			return ErrPasswordResetTokenInvalid
 		}
 
 		consumeResult := tx.Model(&passwordResetTokenEntity{}).
@@ -468,12 +509,13 @@ func (userRefreshTokenEntity) TableName() string {
 }
 
 type emailVerificationTokenEntity struct {
-	ID         uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
-	UserID     uuid.UUID  `gorm:"column:user_id;type:uuid"`
-	TokenHash  string     `gorm:"column:token_hash"`
-	ExpiresAt  time.Time  `gorm:"column:expires_at"`
-	ConsumedAt *time.Time `gorm:"column:consumed_at"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
+	ID                uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	UserID            uuid.UUID  `gorm:"column:user_id;type:uuid"`
+	TokenHash         string     `gorm:"column:token_hash"`
+	AttemptsRemaining int16      `gorm:"column:attempts_remaining"`
+	ExpiresAt         time.Time  `gorm:"column:expires_at"`
+	ConsumedAt        *time.Time `gorm:"column:consumed_at"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
 }
 
 func (emailVerificationTokenEntity) TableName() string {
@@ -481,12 +523,13 @@ func (emailVerificationTokenEntity) TableName() string {
 }
 
 type passwordResetTokenEntity struct {
-	ID         uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
-	UserID     uuid.UUID  `gorm:"column:user_id;type:uuid"`
-	TokenHash  string     `gorm:"column:token_hash"`
-	ExpiresAt  time.Time  `gorm:"column:expires_at"`
-	ConsumedAt *time.Time `gorm:"column:consumed_at"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
+	ID                uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	UserID            uuid.UUID  `gorm:"column:user_id;type:uuid"`
+	TokenHash         string     `gorm:"column:token_hash"`
+	AttemptsRemaining int16      `gorm:"column:attempts_remaining"`
+	ExpiresAt         time.Time  `gorm:"column:expires_at"`
+	ConsumedAt        *time.Time `gorm:"column:consumed_at"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
 }
 
 func (passwordResetTokenEntity) TableName() string {

@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
-	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,9 +22,11 @@ import (
 )
 
 const (
-	defaultVerificationTokenTTL  = 24 * time.Hour
-	defaultPasswordResetTokenTTL = time.Hour
+	defaultVerificationTokenTTL  = 10 * time.Minute
+	defaultPasswordResetTokenTTL = 10 * time.Minute
 )
+
+var otpPattern = regexp.MustCompile(`^\d{6}$`)
 
 type repositoryPort interface {
 	FindUserByEmail(ctx context.Context, email string) (UserRecord, error)
@@ -34,12 +36,12 @@ type repositoryPort interface {
 	RotateRefreshToken(ctx context.Context, oldTokenID string, userID string, newTokenID string, newExpiresAt time.Time, now time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenID string, userID string, now time.Time) error
 	CreatePendingUser(ctx context.Context, input CreatePendingUserInput) (UserRecord, error)
-	VerifyEmailByTokenHash(ctx context.Context, tokenHash string, now time.Time) error
+	ConsumeEmailVerificationOTP(ctx context.Context, userID string, tokenHash string, now time.Time) error
 	CreateEmailVerificationToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
 	InvalidateEmailVerificationTokensForUser(ctx context.Context, userID string, now time.Time) error
 	CreatePasswordResetToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time, createdAt time.Time) error
 	InvalidatePasswordResetTokensForUser(ctx context.Context, userID string, now time.Time) error
-	ResetPasswordByTokenHash(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error
+	ConsumePasswordResetOTP(ctx context.Context, userID string, tokenHash string, passwordHash string, now time.Time) error
 }
 
 type emailSender interface {
@@ -59,16 +61,12 @@ type ServiceOptions struct {
 	VerificationTokenTTL      time.Duration
 	PasswordResetTokenTTL     time.Duration
 	VerificationEmailSender   emailSender
-	EmailVerificationRedirect string
-	PasswordResetRedirect     string
 }
 
 type Service struct {
 	repo                      repositoryPort
 	tokens                    tokenManagerPort
 	emailSender               emailSender
-	emailVerificationRedirect string
-	passwordResetRedirect     string
 	now                       func() time.Time
 	emailVerificationRequired bool
 	exposeVerificationToken   bool
@@ -96,8 +94,6 @@ func NewService(repo repositoryPort, tokens tokenManagerPort, options ServiceOpt
 		repo:                      repo,
 		tokens:                    tokens,
 		emailSender:               options.VerificationEmailSender,
-		emailVerificationRedirect: strings.TrimSpace(options.EmailVerificationRedirect),
-		passwordResetRedirect:     strings.TrimSpace(options.PasswordResetRedirect),
 		now:                       func() time.Time { return time.Now().UTC() },
 		emailVerificationRequired: emailVerificationRequired,
 		exposeVerificationToken:   options.ExposeVerificationToken,
@@ -289,12 +285,26 @@ func (s *Service) SignOut(ctx context.Context, req SignOutRequest) (SignOutData,
 }
 
 func (s *Service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (VerifyEmailData, error) {
+	email := normalizeEmail(req.Email)
 	rawToken := strings.TrimSpace(req.Token)
-	if rawToken == "" {
-		return VerifyEmailData{}, sharederrors.Validation("token is required", nil)
+	if email == "" || rawToken == "" {
+		return VerifyEmailData{}, sharederrors.Validation("email and token are required", nil)
 	}
 
-	err := s.repo.VerifyEmailByTokenHash(ctx, hashVerificationToken(rawToken), s.now())
+	if !otpPattern.MatchString(rawToken) {
+		return VerifyEmailData{}, sharederrors.New(http.StatusBadRequest, "EMAIL_VERIFICATION_TOKEN_INVALID", "invalid email verification token", nil)
+	}
+
+	user, err := s.repo.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return VerifyEmailData{}, sharederrors.New(http.StatusBadRequest, "EMAIL_VERIFICATION_TOKEN_INVALID", "invalid email verification token", nil)
+		}
+
+		return VerifyEmailData{}, sharederrors.Internal("failed to verify email", nil)
+	}
+
+	err = s.repo.ConsumeEmailVerificationOTP(ctx, user.ID, hashVerificationToken(rawToken), s.now())
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmailVerificationTokenExpired):
@@ -390,14 +400,29 @@ func (s *Service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 }
 
 func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (ResetPasswordData, error) {
+	email := normalizeEmail(req.Email)
 	rawToken := strings.TrimSpace(req.Token)
-	if rawToken == "" {
-		return ResetPasswordData{}, sharederrors.Validation("token is required", nil)
+	newPassword := strings.TrimSpace(req.NewPassword)
+
+	if email == "" || rawToken == "" {
+		return ResetPasswordData{}, sharederrors.Validation("email and token are required", nil)
 	}
 
-	newPassword := strings.TrimSpace(req.NewPassword)
 	if newPassword == "" {
 		return ResetPasswordData{}, sharederrors.Validation("newPassword is required", nil)
+	}
+
+	if !otpPattern.MatchString(rawToken) {
+		return ResetPasswordData{}, sharederrors.New(http.StatusBadRequest, "PASSWORD_RESET_TOKEN_INVALID", "invalid password reset token", nil)
+	}
+
+	user, err := s.repo.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ResetPasswordData{}, sharederrors.New(http.StatusBadRequest, "PASSWORD_RESET_TOKEN_INVALID", "invalid password reset token", nil)
+		}
+
+		return ResetPasswordData{}, sharederrors.Internal("failed to reset password", nil)
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -405,7 +430,7 @@ func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (
 		return ResetPasswordData{}, sharederrors.Internal("failed to reset password", nil)
 	}
 
-	err = s.repo.ResetPasswordByTokenHash(ctx, hashVerificationToken(rawToken), string(passwordHash), s.now())
+	err = s.repo.ConsumePasswordResetOTP(ctx, user.ID, hashVerificationToken(rawToken), string(passwordHash), s.now())
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrPasswordResetTokenExpired):
@@ -454,14 +479,9 @@ func (s *Service) sendVerificationEmail(ctx context.Context, userID string, user
 		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
 	}
 
-	redirect, err := buildVerificationRedirectURL(s.emailVerificationRedirect, verificationToken)
-	if err != nil {
-		return sharederrors.Internal("failed to send verification email", nil)
-	}
-
 	if err := s.emailSender.SendVerificationEmail(ctx, sharedemail.VerificationEmailInput{
 		ToEmail:        userEmail,
-		Redirect:       redirect,
+		Code:           verificationToken,
 		IdempotencyKey: buildVerificationIdempotencyKey(userID, verificationTokenHash),
 	}); err != nil {
 		return sharederrors.ServiceUnavailable("failed to send verification email", nil)
@@ -475,39 +495,15 @@ func (s *Service) sendPasswordResetEmail(ctx context.Context, userID string, use
 		return sharederrors.ServiceUnavailable("failed to send password reset email", nil)
 	}
 
-	redirect, err := buildVerificationRedirectURL(s.passwordResetRedirect, resetToken)
-	if err != nil {
-		return sharederrors.Internal("failed to send password reset email", nil)
-	}
-
 	if err := s.emailSender.SendPasswordResetEmail(ctx, sharedemail.PasswordResetEmailInput{
 		ToEmail:        userEmail,
-		Redirect:       redirect,
+		Code:           resetToken,
 		IdempotencyKey: buildPasswordResetIdempotencyKey(userID, resetTokenHash),
 	}); err != nil {
 		return sharederrors.ServiceUnavailable("failed to send password reset email", nil)
 	}
 
 	return nil
-}
-
-func buildVerificationRedirectURL(base string, token string) (string, error) {
-	trimmedBase := strings.TrimSpace(base)
-	trimmedToken := strings.TrimSpace(token)
-	if trimmedBase == "" || trimmedToken == "" {
-		return "", fmt.Errorf("verification redirect base and token are required")
-	}
-
-	parsed, err := url.Parse(trimmedBase)
-	if err != nil {
-		return "", err
-	}
-
-	query := parsed.Query()
-	query.Set("token", trimmedToken)
-	parsed.RawQuery = query.Encode()
-
-	return parsed.String(), nil
 }
 
 func buildVerificationIdempotencyKey(userID string, tokenHash string) string {
@@ -533,12 +529,12 @@ func normalizeEmail(raw string) string {
 }
 
 func generateVerificationToken() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
 		return "", err
 	}
 
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
 func hashVerificationToken(rawToken string) string {

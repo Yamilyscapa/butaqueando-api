@@ -88,8 +88,6 @@ func Bootstrap() (*Application, error) {
 		EmailVerificationRequired: cfg.EmailVerificationRequired,
 		ExposeVerificationToken:   cfg.AppEnv != "production",
 		VerificationEmailSender:   verificationEmailSender,
-		EmailVerificationRedirect: cfg.EmailVerificationRedirect,
-		PasswordResetRedirect:     cfg.PasswordResetRedirect,
 		PasswordResetTokenTTL:     cfg.PasswordResetTokenTTL,
 		PlaysStorage:              playsStorage,
 		UsersStorage:              usersStorage,

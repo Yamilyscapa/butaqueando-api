@@ -21,7 +21,8 @@ type SignOutRequest struct {
 }
 
 type VerifyEmailRequest struct {
-	Token string `json:"token" binding:"required"`
+	Email string `json:"email" binding:"required,email"`
+	Token string `json:"token" binding:"required,len=6,numeric"`
 }
 
 type ResendVerificationRequest struct {
@@ -33,7 +34,8 @@ type ForgotPasswordRequest struct {
 }
 
 type ResetPasswordRequest struct {
-	Token       string `json:"token" binding:"required"`
+	Email       string `json:"email" binding:"required,email"`
+	Token       string `json:"token" binding:"required,len=6,numeric"`
 	NewPassword string `json:"newPassword" binding:"required,min=8,max=72"`
 }
 
