@@ -9,3 +9,4 @@
 \ir 05_play_relations.sql
 \ir 06_social.sql
 \ir 07_cities_mexico.sql
+\ir 08_locations_from_plays.sql

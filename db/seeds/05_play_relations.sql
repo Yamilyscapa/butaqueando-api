@@ -15,66 +15,6 @@ VALUES
 ON CONFLICT (play_id, genre_id)
 DO NOTHING;
 
-INSERT INTO app.play_cast_members (
-  id,
-  play_id,
-  person_name,
-  role_name,
-  billing_order,
-  created_at
-)
-VALUES
-  (
-    '00000000-0000-0000-0000-000000000301',
-    '00000000-0000-0000-0000-000000000201',
-    'Luis Medina',
-    'Hamlet',
-    1,
-    now() - interval '30 days'
-  ),
-  (
-    '00000000-0000-0000-0000-000000000302',
-    '00000000-0000-0000-0000-000000000201',
-    'Paula Cardenas',
-    'Ofelia',
-    2,
-    now() - interval '30 days'
-  ),
-  (
-    '00000000-0000-0000-0000-000000000303',
-    '00000000-0000-0000-0000-000000000203',
-    'Ivan Guerra',
-    'El Principito',
-    1,
-    now() - interval '20 days'
-  ),
-  (
-    '00000000-0000-0000-0000-000000000304',
-    '00000000-0000-0000-0000-000000000203',
-    'Marta Leon',
-    'La Rosa',
-    2,
-    now() - interval '20 days'
-  ),
-  (
-    '00000000-0000-0000-0000-000000000305',
-    '00000000-0000-0000-0000-000000000204',
-    'Sergio Navas',
-    'Novio',
-    1,
-    now() - interval '14 days'
-  ),
-  (
-    '00000000-0000-0000-0000-000000000306',
-    '00000000-0000-0000-0000-000000000204',
-    'Claudia Nieto',
-    'Novia',
-    2,
-    now() - interval '14 days'
-  )
-ON CONFLICT (play_id, person_name, role_name)
-DO NOTHING;
-
 INSERT INTO app.play_media (
   id,
   play_id,
