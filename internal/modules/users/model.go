@@ -10,6 +10,7 @@ type ProfileStatsData struct {
 type MeProfileData struct {
 	ID            string           `json:"id"`
 	DisplayName   string           `json:"displayName"`
+	Username      string           `json:"username"`
 	Email         string           `json:"email"`
 	Role          string           `json:"role"`
 	Bio           *string          `json:"bio"`
@@ -21,6 +22,7 @@ type MeProfileData struct {
 type PublicProfileData struct {
 	ID            string           `json:"id"`
 	DisplayName   string           `json:"displayName"`
+	Username      string           `json:"username"`
 	Bio           *string          `json:"bio"`
 	AvatarURL     *string          `json:"avatarUrl"`
 	AvatarVersion *string          `json:"avatarVersion"`
@@ -29,6 +31,7 @@ type PublicProfileData struct {
 
 type UpdateMeProfileRequest struct {
 	DisplayName     *string `json:"displayName"`
+	Username        *string `json:"username"`
 	Bio             *string `json:"bio"`
 	AvatarObjectKey *string `json:"avatarObjectKey"`
 }
@@ -52,6 +55,8 @@ type AccountDeletionRequestData struct {
 type UpdateMeProfilePatch struct {
 	DisplayNameSet     bool
 	DisplayName        *string
+	UsernameSet        bool
+	Username           *string
 	BioSet             bool
 	Bio                *string
 	AvatarObjectKeySet bool
@@ -70,6 +75,7 @@ type AvatarVariantRecord struct {
 type MeProfileRecord struct {
 	ID              string
 	DisplayName     string
+	Username        string
 	Email           string
 	Role            string
 	Bio             *string
@@ -84,6 +90,7 @@ type MeProfileRecord struct {
 type PublicProfileRecord struct {
 	ID              string
 	DisplayName     string
+	Username        string
 	Bio             *string
 	AvatarObjectKey *string
 	AvatarVersion   string

@@ -312,7 +312,7 @@ func TestServiceSignUpDuplicateEmailReturnsConflict(t *testing.T) {
 	}
 
 	service := NewService(repo, &fakeTokenManager{}, ServiceOptions{})
-	_, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Email: "user@butaqueando.local", Password: "password123"})
+	_, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Username: "user_one", Email: "user@butaqueando.local", Password: "password123"})
 	if err == nil {
 		t.Fatalf("expected sign up error")
 	}
@@ -352,7 +352,7 @@ func TestServiceSignUpExposesVerificationTokenInDev(t *testing.T) {
 		VerificationEmailSender:   sender,
 		EmailVerificationRedirect: "https://app.butaqueando.com/verify-email",
 	})
-	result, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Email: "user@butaqueando.local", Password: "password123"})
+	result, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Username: "user_one", Email: "user@butaqueando.local", Password: "password123"})
 	if err != nil {
 		t.Fatalf("expected sign up success, got error: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestServiceSignUpSendsVerificationEmailWhenRequired(t *testing.T) {
 		EmailVerificationRedirect: "https://app.butaqueando.com/verify-email",
 	})
 
-	_, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Email: "user@butaqueando.local", Password: "password123"})
+	_, err := service.SignUp(context.Background(), SignUpRequest{DisplayName: "User", Username: "user_one", Email: "user@butaqueando.local", Password: "password123"})
 	if err != nil {
 		t.Fatalf("expected sign up success, got error: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 type UserRecord struct {
 	ID              string
 	DisplayName     string
+	Username        string
 	Email           string
 	PasswordHash    string
 	Role            string
@@ -28,6 +29,7 @@ type RefreshTokenRecord struct {
 
 type CreatePendingUserInput struct {
 	DisplayName                string
+	Username                   string
 	Email                      string
 	PasswordHash               string
 	Role                       string
@@ -219,6 +221,7 @@ func (r *Repository) CreatePendingUser(ctx context.Context, input CreatePendingU
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		createdUser = userEntity{
 			DisplayName:  input.DisplayName,
+			Username:     input.Username,
 			Email:        input.Email,
 			PasswordHash: input.PasswordHash,
 			Role:         input.Role,
@@ -426,6 +429,7 @@ func (r *Repository) ensureDB() error {
 type userEntity struct {
 	ID              uuid.UUID  `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
 	DisplayName     string     `gorm:"column:display_name"`
+	Username        string     `gorm:"column:username"`
 	Email           string     `gorm:"column:email"`
 	PasswordHash    string     `gorm:"column:password_hash"`
 	Role            string     `gorm:"column:role"`
@@ -493,6 +497,7 @@ func mapUserEntityToRecord(entity userEntity) UserRecord {
 	return UserRecord{
 		ID:              entity.ID.String(),
 		DisplayName:     entity.DisplayName,
+		Username:        entity.Username,
 		Email:           entity.Email,
 		PasswordHash:    entity.PasswordHash,
 		Role:            entity.Role,

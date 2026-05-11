@@ -15,6 +15,7 @@ import (
 
 	sharedemail "github.com/butaqueando/api/internal/shared/email"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
+	"github.com/butaqueando/api/internal/modules/users"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -114,6 +115,11 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 		return SignUpData{}, sharederrors.Validation("displayName, email and password are required", nil)
 	}
 
+	username, err := users.ValidateUsername(req.Username)
+	if err != nil {
+		return SignUpData{}, err
+	}
+
 	if _, err := s.repo.FindUserByEmail(ctx, email); err == nil {
 		return SignUpData{}, sharederrors.New(http.StatusConflict, "EMAIL_ALREADY_IN_USE", "email already in use", nil)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -134,6 +140,7 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 	now := s.now()
 	createdUser, err := s.repo.CreatePendingUser(ctx, CreatePendingUserInput{
 		DisplayName:                displayName,
+		Username:                   username,
 		Email:                      email,
 		PasswordHash:               string(passwordHash),
 		Role:                       "user",
@@ -142,6 +149,9 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 		CreatedAt:                  now,
 	})
 	if err != nil {
+		if isUsernameAlreadyInUseError(err) {
+			return SignUpData{}, sharederrors.New(http.StatusConflict, "USERNAME_TAKEN", "username already taken", nil)
+		}
 		if isEmailAlreadyInUseError(err) {
 			return SignUpData{}, sharederrors.New(http.StatusConflict, "EMAIL_ALREADY_IN_USE", "email already in use", nil)
 		}
@@ -151,6 +161,7 @@ func (s *Service) SignUp(ctx context.Context, req SignUpRequest) (SignUpData, er
 
 	response := SignUpData{
 		UserID:                    createdUser.ID,
+		Username:                  createdUser.Username,
 		Email:                     createdUser.Email,
 		EmailVerificationRequired: s.emailVerificationRequired,
 	}
@@ -422,6 +433,7 @@ func buildTokensData(user UserRecord, accessToken string, accessExpiresAt time.T
 		User: &AuthUserData{
 			ID:          user.ID,
 			DisplayName: user.DisplayName,
+			Username:    user.Username,
 			Email:       user.Email,
 			Role:        user.Role,
 		},
@@ -539,13 +551,38 @@ func isEmailAlreadyInUseError(err error) bool {
 		return false
 	}
 
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if pgErr.Code != "23505" {
+			return false
+		}
+		name := strings.ToLower(pgErr.ConstraintName)
+		if name == "" {
+			// Older drivers may not expose the constraint name; fall back to
+			// treating any unique-violation as email (existing behavior).
+			return true
+		}
+		return strings.Contains(name, "email")
+	}
+
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return true
 	}
 
+	return false
+}
+
+func isUsernameAlreadyInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
+		if pgErr.Code != "23505" {
+			return false
+		}
+		return strings.Contains(strings.ToLower(pgErr.ConstraintName), "username")
 	}
 
 	return false

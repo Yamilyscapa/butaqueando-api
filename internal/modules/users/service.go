@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,20 +18,41 @@ import (
 )
 
 const (
-	maxBioLength           = 500
+	maxBioLength           = 140
+	minUsernameLength      = 3
+	maxUsernameLength      = 20
 	defaultUploadURLTTL    = 15 * time.Minute
 	defaultMaxImageBytes   = 10 * 1024 * 1024
 	defaultUserMediaPrefix = "/v1/media/users"
 	avatarMaxWidth         = 200
 	avatarMaxHeight        = 200
+	defaultUserSearchLimit = 20
+	maxUserSearchLimit     = 50
+)
+
+var (
+	usernameFormatRegex = regexp.MustCompile(`^[a-z0-9_]+$`)
+	reservedUsernames   = map[string]struct{}{
+		"admin":   {},
+		"me":      {},
+		"api":     {},
+		"support": {},
+		"null":    {},
+		"system":  {},
+		"root":    {},
+	}
 )
 
 type repositoryPort interface {
 	GetPublicProfile(ctx context.Context, userID string) (PublicProfileRecord, error)
 	GetMeProfile(ctx context.Context, userID string) (MeProfileRecord, error)
 	UpdateMeProfile(ctx context.Context, userID string, patch UpdateMeProfilePatch) (MeProfileRecord, error)
+	IsUsernameAvailable(ctx context.Context, username string, excludeUserID string) (bool, error)
+	SearchUsers(ctx context.Context, query string, limit int) ([]PublicProfileRecord, error)
 	CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestRecord, error)
 }
+
+var ErrUsernameTaken = errors.New("username already taken")
 
 type Service struct {
 	repo             repositoryPort
@@ -253,6 +276,16 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 		return MeProfileData{}, err
 	}
 
+	if patch.UsernameSet && patch.Username != nil {
+		available, err := s.repo.IsUsernameAvailable(ctx, *patch.Username, userID)
+		if err != nil {
+			return MeProfileData{}, sharederrors.Internal("failed to update profile", nil)
+		}
+		if !available {
+			return MeProfileData{}, sharederrors.New(http.StatusConflict, "USERNAME_TAKEN", "username already taken", nil)
+		}
+	}
+
 	if patch.AvatarObjectKeySet {
 		if patch.AvatarObjectKey != nil {
 			if !strings.HasPrefix(*patch.AvatarObjectKey, "users/"+userID+"/avatar/") {
@@ -289,10 +322,40 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 			return MeProfileData{}, sharederrors.NotFound("user profile not found", nil)
 		}
 
+		if errors.Is(err, ErrUsernameTaken) {
+			return MeProfileData{}, sharederrors.New(http.StatusConflict, "USERNAME_TAKEN", "username already taken", nil)
+		}
+
 		return MeProfileData{}, sharederrors.Internal("failed to update profile", nil)
 	}
 
 	return mapMeProfileRecord(record, s.userMediaBaseURL), nil
+}
+
+func (s *Service) SearchUsers(ctx context.Context, query string, limit int) ([]PublicProfileData, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(query))
+	if trimmed == "" {
+		return []PublicProfileData{}, nil
+	}
+
+	if limit <= 0 {
+		limit = defaultUserSearchLimit
+	}
+	if limit > maxUserSearchLimit {
+		limit = maxUserSearchLimit
+	}
+
+	records, err := s.repo.SearchUsers(ctx, trimmed, limit)
+	if err != nil {
+		return nil, sharederrors.Internal("failed to search users", nil)
+	}
+
+	results := make([]PublicProfileData, 0, len(records))
+	for _, record := range records {
+		results = append(results, mapPublicProfileRecord(record, s.userMediaBaseURL))
+	}
+
+	return results, nil
 }
 
 func (s *Service) CreateAvatarUpload(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error) {
@@ -366,10 +429,19 @@ func validateAndBuildPatch(req UpdateMeProfileRequest) (UpdateMeProfilePatch, er
 		patch.DisplayName = &displayName
 	}
 
+	if req.Username != nil {
+		normalized, err := ValidateUsername(*req.Username)
+		if err != nil {
+			return UpdateMeProfilePatch{}, err
+		}
+		patch.UsernameSet = true
+		patch.Username = &normalized
+	}
+
 	if req.Bio != nil {
 		bio := strings.TrimSpace(*req.Bio)
 		if len(bio) > maxBioLength {
-			return UpdateMeProfilePatch{}, sharederrors.Validation("bio length must be at most 500", nil)
+			return UpdateMeProfilePatch{}, sharederrors.Validation(fmt.Sprintf("bio length must be at most %d", maxBioLength), nil)
 		}
 
 		patch.BioSet = true
@@ -390,11 +462,30 @@ func validateAndBuildPatch(req UpdateMeProfileRequest) (UpdateMeProfilePatch, er
 		}
 	}
 
-	if !patch.DisplayNameSet && !patch.BioSet && !patch.AvatarObjectKeySet {
+	if !patch.DisplayNameSet && !patch.UsernameSet && !patch.BioSet && !patch.AvatarObjectKeySet {
 		return UpdateMeProfilePatch{}, sharederrors.Validation("at least one field must be provided", nil)
 	}
 
 	return patch, nil
+}
+
+// ValidateUsername lowercases + trims input, enforces length/charset/reserved rules,
+// and returns the normalized form (or a sharederrors.Validation error).
+func ValidateUsername(raw string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return "", sharederrors.Validation("username is required", nil)
+	}
+	if len(normalized) < minUsernameLength || len(normalized) > maxUsernameLength {
+		return "", sharederrors.Validation(fmt.Sprintf("username length must be between %d and %d", minUsernameLength, maxUsernameLength), nil)
+	}
+	if !usernameFormatRegex.MatchString(normalized) {
+		return "", sharederrors.Validation("username may only contain lowercase letters, numbers and underscores", nil)
+	}
+	if _, reserved := reservedUsernames[normalized]; reserved {
+		return "", sharederrors.Validation("username is reserved", nil)
+	}
+	return normalized, nil
 }
 
 type optimizedAvatarResult struct {
@@ -523,6 +614,7 @@ func mapMeProfileRecord(record MeProfileRecord, userMediaBaseURL string) MeProfi
 	return MeProfileData{
 		ID:            record.ID,
 		DisplayName:   record.DisplayName,
+		Username:      record.Username,
 		Email:         record.Email,
 		Role:          record.Role,
 		Bio:           record.Bio,
@@ -541,6 +633,7 @@ func mapPublicProfileRecord(record PublicProfileRecord, userMediaBaseURL string)
 	return PublicProfileData{
 		ID:            record.ID,
 		DisplayName:   record.DisplayName,
+		Username:      record.Username,
 		Bio:           record.Bio,
 		AvatarURL:     buildAvatarURL(userMediaBaseURL, record.ID, record.AvatarObjectKey, record.AvatarVersion),
 		AvatarVersion: &record.AvatarVersion,

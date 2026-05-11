@@ -7,6 +7,7 @@ type SignInRequest struct {
 
 type SignUpRequest struct {
 	DisplayName string `json:"displayName" binding:"required,min=2,max=80"`
+	Username    string `json:"username" binding:"required,min=3,max=20"`
 	Email       string `json:"email" binding:"required,email"`
 	Password    string `json:"password" binding:"required,min=8,max=72"`
 }
@@ -39,6 +40,7 @@ type ResetPasswordRequest struct {
 type AuthUserData struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
+	Username    string `json:"username"`
 	Email       string `json:"email"`
 	Role        string `json:"role"`
 }
@@ -74,6 +76,7 @@ type ResetPasswordData struct {
 
 type SignUpData struct {
 	UserID                    string  `json:"userId"`
+	Username                  string  `json:"username"`
 	Email                     string  `json:"email"`
 	EmailVerificationRequired bool    `json:"emailVerificationRequired"`
 	VerificationToken         *string `json:"verificationToken,omitempty"`

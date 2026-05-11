@@ -16,10 +16,12 @@ import (
 )
 
 type fakeRepository struct {
-	getPublicProfileFn func(ctx context.Context, userID string) (PublicProfileRecord, error)
-	getMeProfileFn     func(ctx context.Context, userID string) (MeProfileRecord, error)
-	updateMeProfileFn  func(ctx context.Context, userID string, patch UpdateMeProfilePatch) (MeProfileRecord, error)
-	createDeletionFn   func(ctx context.Context, userID string) (AccountDeletionRequestRecord, error)
+	getPublicProfileFn      func(ctx context.Context, userID string) (PublicProfileRecord, error)
+	getMeProfileFn          func(ctx context.Context, userID string) (MeProfileRecord, error)
+	updateMeProfileFn       func(ctx context.Context, userID string, patch UpdateMeProfilePatch) (MeProfileRecord, error)
+	isUsernameAvailableFn   func(ctx context.Context, username string, excludeUserID string) (bool, error)
+	searchUsersFn           func(ctx context.Context, query string, limit int) ([]PublicProfileRecord, error)
+	createDeletionFn        func(ctx context.Context, userID string) (AccountDeletionRequestRecord, error)
 }
 
 type fakeStorage struct {
@@ -91,6 +93,22 @@ func (f *fakeRepository) UpdateMeProfile(ctx context.Context, userID string, pat
 	}
 
 	return MeProfileRecord{}, gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepository) IsUsernameAvailable(ctx context.Context, username string, excludeUserID string) (bool, error) {
+	if f.isUsernameAvailableFn != nil {
+		return f.isUsernameAvailableFn(ctx, username, excludeUserID)
+	}
+
+	return true, nil
+}
+
+func (f *fakeRepository) SearchUsers(ctx context.Context, query string, limit int) ([]PublicProfileRecord, error) {
+	if f.searchUsersFn != nil {
+		return f.searchUsersFn(ctx, query, limit)
+	}
+
+	return []PublicProfileRecord{}, nil
 }
 
 func (f *fakeRepository) CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestRecord, error) {

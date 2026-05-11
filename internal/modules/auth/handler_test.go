@@ -99,7 +99,7 @@ func TestHandlerSignUpSuccess(t *testing.T) {
 	}})
 	router.POST("/v1/auth/sign-up", handler.SignUp)
 
-	body := bytes.NewBufferString(`{"displayName":"New User","email":"new@butaqueando.local","password":"password123"}`)
+	body := bytes.NewBufferString(`{"displayName":"New User","username":"new_user","email":"new@butaqueando.local","password":"password123"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/auth/sign-up", body)
 	request.Header.Set("Content-Type", "application/json")

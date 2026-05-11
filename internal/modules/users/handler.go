@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/butaqueando/api/internal/http/middleware"
 	sharederrors "github.com/butaqueando/api/internal/shared/errors"
@@ -14,6 +15,7 @@ type servicePort interface {
 	GetPublicProfile(ctx context.Context, userID string) (PublicProfileData, error)
 	GetMeProfile(ctx context.Context, userID string) (MeProfileData, error)
 	UpdateMeProfile(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
+	SearchUsers(ctx context.Context, query string, limit int) ([]PublicProfileData, error)
 	CreateAvatarUpload(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error)
 	CreateAccountDeletionRequest(ctx context.Context, userID string) (AccountDeletionRequestData, error)
 }
@@ -26,8 +28,30 @@ func NewHandler(service servicePort) *Handler {
 	return &Handler{service: service}
 }
 
+type UserSearchResponseData struct {
+	Items      []PublicProfileData `json:"items"`
+	NextCursor *string             `json:"nextCursor"`
+}
+
 func (h *Handler) List(c *gin.Context) {
-	h.notImplemented(c)
+	query := c.Query("q")
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			_ = c.Error(sharederrors.Validation("invalid limit", nil))
+			return
+		}
+		limit = parsed
+	}
+
+	items, err := h.service.SearchUsers(c.Request.Context(), query, limit)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	httpx.WriteData(c, http.StatusOK, UserSearchResponseData{Items: items, NextCursor: nil})
 }
 
 func (h *Handler) GetProfile(c *gin.Context) {
@@ -117,6 +141,3 @@ func (h *Handler) CreateAccountDeletionRequest(c *gin.Context) {
 	httpx.WriteData(c, http.StatusOK, data)
 }
 
-func (h *Handler) notImplemented(c *gin.Context) {
-	_ = c.Error(sharederrors.NotImplemented("users endpoint not implemented yet", nil))
-}

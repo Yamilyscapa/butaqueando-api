@@ -11,39 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestRouterNotImplementedUsesErrorEnvelope(t *testing.T) {
-	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
-	router := NewRouter(Dependencies{DB: nil})
-
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
-	request.Header.Set(httpx.RequestIDHeader, "router-not-impl-test")
-	router.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotImplemented {
-		t.Fatalf("expected status %d, got %d", http.StatusNotImplemented, recorder.Code)
-	}
-
-	var body httpx.ResponseEnvelope
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	if body.Error == nil {
-		t.Fatalf("expected error payload")
-	}
-
-	if body.Error.Code != "NOT_IMPLEMENTED" {
-		t.Fatalf("expected code %q, got %q", "NOT_IMPLEMENTED", body.Error.Code)
-	}
-
-	if body.RequestID != "router-not-impl-test" {
-		t.Fatalf("expected request id %q, got %q", "router-not-impl-test", body.RequestID)
-	}
-}
-
 func TestRouterNoRouteUsesErrorEnvelope(t *testing.T) {
 	t.Parallel()
 

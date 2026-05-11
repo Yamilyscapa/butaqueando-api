@@ -17,6 +17,7 @@ type fakeService struct {
 	getPublicProfileFn   func(ctx context.Context, userID string) (PublicProfileData, error)
 	getMeProfileFn       func(ctx context.Context, userID string) (MeProfileData, error)
 	updateMeProfileFn    func(ctx context.Context, userID string, req UpdateMeProfileRequest) (MeProfileData, error)
+	searchUsersFn        func(ctx context.Context, query string, limit int) ([]PublicProfileData, error)
 	createAvatarUploadFn func(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error)
 	createDeletionReqFn  func(ctx context.Context, userID string) (AccountDeletionRequestData, error)
 }
@@ -43,6 +44,14 @@ func (f *fakeService) UpdateMeProfile(ctx context.Context, userID string, req Up
 	}
 
 	return MeProfileData{}, nil
+}
+
+func (f *fakeService) SearchUsers(ctx context.Context, query string, limit int) ([]PublicProfileData, error) {
+	if f.searchUsersFn != nil {
+		return f.searchUsersFn(ctx, query, limit)
+	}
+
+	return []PublicProfileData{}, nil
 }
 
 func (f *fakeService) CreateAvatarUpload(ctx context.Context, userID string, req CreateAvatarUploadRequest) (CreateAvatarUploadData, error) {
