@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -166,6 +167,12 @@ func (r *Repository) UpdateMeProfile(ctx context.Context, userID string, patch U
 
 			if patch.AvatarObjectKeySet {
 				updates["avatar_object_key"] = patch.AvatarObjectKey
+				variantsJSON, err := encodeAvatarVariants(patch.AvatarVariants)
+				if err != nil {
+					return err
+				}
+				updates["avatar_variants"] = variantsJSON
+				updates["avatar_blurhash"] = patch.AvatarBlurhash
 			}
 
 			result := tx.Model(&userProfileEntity{}).
@@ -186,6 +193,12 @@ func (r *Repository) UpdateMeProfile(ctx context.Context, userID string, patch U
 
 				if patch.AvatarObjectKeySet {
 					profile.AvatarObjectKey = patch.AvatarObjectKey
+					variantsJSON, err := encodeAvatarVariants(patch.AvatarVariants)
+					if err != nil {
+						return err
+					}
+					profile.AvatarVariants = variantsJSON
+					profile.AvatarBlurhash = patch.AvatarBlurhash
 				}
 
 				if err := tx.Create(&profile).Error; err != nil {
@@ -313,7 +326,16 @@ type userProfileEntity struct {
 	UserID          uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey"`
 	Bio             *string   `gorm:"column:bio"`
 	AvatarObjectKey *string   `gorm:"column:avatar_object_key"`
+	AvatarVariants  []byte    `gorm:"column:avatar_variants;type:jsonb"`
+	AvatarBlurhash  *string   `gorm:"column:avatar_blurhash"`
 	UpdatedAt       time.Time `gorm:"column:updated_at"`
+}
+
+func encodeAvatarVariants(variants []AvatarVariantRecord) ([]byte, error) {
+	if len(variants) == 0 {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(variants)
 }
 
 func (userProfileEntity) TableName() string {

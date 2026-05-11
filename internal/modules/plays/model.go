@@ -248,11 +248,19 @@ type PlayCastMemberData struct {
 }
 
 type PlayMediaData struct {
-	ID        string  `json:"id"`
-	Kind      string  `json:"kind"`
-	URL       string  `json:"url"`
-	AltText   *string `json:"altText"`
-	SortOrder int     `json:"sortOrder"`
+	ID        string                  `json:"id"`
+	Kind      string                  `json:"kind"`
+	URL       string                  `json:"url"`
+	AltText   *string                 `json:"altText"`
+	SortOrder int                     `json:"sortOrder"`
+	Variants  []PlayMediaVariantData  `json:"variants,omitempty"`
+	Blurhash  *string                 `json:"blurhash,omitempty"`
+}
+
+type PlayMediaVariantData struct {
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	URL    string `json:"url"`
 }
 
 type CreateSubmissionMediaUploadData struct {
@@ -514,6 +522,15 @@ type PlayMediaRecord struct {
 	AltText   *string
 	SortOrder int
 	PlayID    string
+	Variants  []MediaVariantRecord
+	Blurhash  *string
+}
+
+type MediaVariantRecord struct {
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	ObjectKey string `json:"objectKey"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 type ReviewRecord struct {
@@ -596,6 +613,8 @@ type CreatePlayMediaParams struct {
 	ObjectKey string
 	AltText   *string
 	SortOrder int
+	Variants  []MediaVariantRecord
+	Blurhash  *string
 	CreatedAt time.Time
 }
 

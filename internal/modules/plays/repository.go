@@ -2,6 +2,7 @@ package plays
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -339,7 +340,7 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 	var rows []playMediaRow
 	err = r.db.WithContext(ctx).
 		Table("app.play_media").
-		Select("id, kind, object_key, alt_text, sort_order").
+		Select("id, kind, object_key, alt_text, sort_order, variants, blurhash").
 		Where("play_id = ?", playUUID).
 		Order("sort_order ASC").
 		Order("created_at ASC").
@@ -350,7 +351,16 @@ func (r *Repository) ListPlayMedia(ctx context.Context, playID string) ([]PlayMe
 
 	media := make([]PlayMediaRecord, 0, len(rows))
 	for _, row := range rows {
-		media = append(media, PlayMediaRecord{ID: row.ID.String(), Kind: row.Kind, ObjectKey: row.ObjectKey, AltText: row.AltText, SortOrder: row.SortOrder, PlayID: playID})
+		media = append(media, PlayMediaRecord{
+			ID:        row.ID.String(),
+			Kind:      row.Kind,
+			ObjectKey: row.ObjectKey,
+			AltText:   row.AltText,
+			SortOrder: row.SortOrder,
+			PlayID:    playID,
+			Variants:  decodeMediaVariants(row.Variants),
+			Blurhash:  row.Blurhash,
+		})
 	}
 
 	return media, nil
@@ -1834,7 +1844,7 @@ func (r *Repository) ListPlayEditSuggestionMedia(ctx context.Context, suggestion
 	var rows []playEditSuggestionMediaRow
 	err = r.db.WithContext(ctx).
 		Table("app.play_edit_suggestion_media AS sm").
-		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.suggestion_id").
+		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.variants, sm.blurhash, sm.suggestion_id").
 		Where("sm.suggestion_id = ?", suggestionUUID).
 		Order("sm.sort_order ASC").
 		Order("sm.created_at ASC").
@@ -1851,6 +1861,8 @@ func (r *Repository) ListPlayEditSuggestionMedia(ctx context.Context, suggestion
 			ObjectKey: row.ObjectKey,
 			AltText:   row.AltText,
 			SortOrder: row.SortOrder,
+			Variants:  decodeMediaVariants(row.Variants),
+			Blurhash:  row.Blurhash,
 			PlayID:    row.SuggestionID.String(),
 		})
 	}
@@ -1867,12 +1879,19 @@ func (r *Repository) CreatePlayEditSuggestionMedia(ctx context.Context, suggesti
 		return PlayMediaRecord{}, err
 	}
 
+	variantsJSON, err := encodeMediaVariants(params.Variants)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
 	entity := playEditSuggestionMediaEntity{
 		SuggestionID: suggestionUUID,
 		Kind:         params.Kind,
 		ObjectKey:    params.ObjectKey,
 		AltText:      params.AltText,
 		SortOrder:    params.SortOrder,
+		Variants:     variantsJSON,
+		Blurhash:     params.Blurhash,
 		CreatedAt:    params.CreatedAt,
 	}
 
@@ -1886,6 +1905,8 @@ func (r *Repository) CreatePlayEditSuggestionMedia(ctx context.Context, suggesti
 		ObjectKey: entity.ObjectKey,
 		AltText:   entity.AltText,
 		SortOrder: entity.SortOrder,
+		Variants:  params.Variants,
+		Blurhash:  params.Blurhash,
 		PlayID:    suggestionID,
 	}, nil
 }
@@ -1903,7 +1924,7 @@ func (r *Repository) GetPlayEditSuggestionMediaByID(ctx context.Context, mediaID
 	var row playEditSuggestionMediaRow
 	err = r.db.WithContext(ctx).
 		Table("app.play_edit_suggestion_media AS sm").
-		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.suggestion_id").
+		Select("sm.id, sm.kind, sm.object_key, sm.alt_text, sm.sort_order, sm.variants, sm.blurhash, sm.suggestion_id").
 		Where("sm.id = ?", mediaUUID).
 		Take(&row).Error
 	if err != nil {
@@ -1916,6 +1937,8 @@ func (r *Repository) GetPlayEditSuggestionMediaByID(ctx context.Context, mediaID
 		ObjectKey: row.ObjectKey,
 		AltText:   row.AltText,
 		SortOrder: row.SortOrder,
+		Variants:  decodeMediaVariants(row.Variants),
+		Blurhash:  row.Blurhash,
 		PlayID:    row.SuggestionID.String(),
 	}, nil
 }
@@ -1958,12 +1981,18 @@ func (r *Repository) ReplacePlayEditSuggestionMedia(ctx context.Context, suggest
 		}
 		entities := make([]playEditSuggestionMediaEntity, 0, len(media))
 		for _, item := range media {
+			variantsJSON, err := encodeMediaVariants(item.Variants)
+			if err != nil {
+				return err
+			}
 			entities = append(entities, playEditSuggestionMediaEntity{
 				SuggestionID: suggestionUUID,
 				Kind:         item.Kind,
 				ObjectKey:    item.ObjectKey,
 				AltText:      item.AltText,
 				SortOrder:    item.SortOrder,
+				Variants:     variantsJSON,
+				Blurhash:     item.Blurhash,
 				CreatedAt:    item.CreatedAt,
 			})
 		}
@@ -2035,6 +2064,8 @@ func (r *Repository) ApplyApprovedPlayEditSuggestion(ctx context.Context, sugges
 					ObjectKey: m.ObjectKey,
 					AltText:   m.AltText,
 					SortOrder: m.SortOrder,
+					Variants:  m.Variants,
+					Blurhash:  m.Blurhash,
 					CreatedAt: updatedAt,
 				})
 			}
@@ -2199,12 +2230,19 @@ func (r *Repository) CreatePlayMedia(ctx context.Context, params CreatePlayMedia
 		return PlayMediaRecord{}, err
 	}
 
+	variantsJSON, err := encodeMediaVariants(params.Variants)
+	if err != nil {
+		return PlayMediaRecord{}, err
+	}
+
 	entity := playMediaEntity{
 		PlayID:    playUUID,
 		Kind:      params.Kind,
 		ObjectKey: params.ObjectKey,
 		AltText:   params.AltText,
 		SortOrder: params.SortOrder,
+		Variants:  variantsJSON,
+		Blurhash:  params.Blurhash,
 		CreatedAt: params.CreatedAt,
 	}
 
@@ -2218,8 +2256,29 @@ func (r *Repository) CreatePlayMedia(ctx context.Context, params CreatePlayMedia
 		ObjectKey: entity.ObjectKey,
 		AltText:   entity.AltText,
 		SortOrder: entity.SortOrder,
+		Variants:  params.Variants,
+		Blurhash:  params.Blurhash,
 		PlayID:    params.PlayID,
 	}, nil
+}
+
+func (r *Repository) UpdatePlayMediaVariants(ctx context.Context, mediaID string, variants []MediaVariantRecord, blurhash *string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+	mediaUUID, err := parseUUID(mediaID)
+	if err != nil {
+		return err
+	}
+	variantsJSON, err := encodeMediaVariants(variants)
+	if err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"variants": variantsJSON,
+		"blurhash": blurhash,
+	}
+	return r.db.WithContext(ctx).Table("app.play_media").Where("id = ?", mediaUUID).Updates(updates).Error
 }
 
 func (r *Repository) basePlayListQuery(ctx context.Context) *gorm.DB {
@@ -2669,6 +2728,8 @@ type playMediaRow struct {
 	ObjectKey string    `gorm:"column:object_key"`
 	AltText   *string   `gorm:"column:alt_text"`
 	SortOrder int       `gorm:"column:sort_order"`
+	Variants  []byte    `gorm:"column:variants"`
+	Blurhash  *string   `gorm:"column:blurhash"`
 }
 
 type playEditSuggestionMediaRow struct {
@@ -2677,7 +2738,27 @@ type playEditSuggestionMediaRow struct {
 	ObjectKey    string    `gorm:"column:object_key"`
 	AltText      *string   `gorm:"column:alt_text"`
 	SortOrder    int       `gorm:"column:sort_order"`
+	Variants     []byte    `gorm:"column:variants"`
+	Blurhash     *string   `gorm:"column:blurhash"`
 	SuggestionID uuid.UUID `gorm:"column:suggestion_id"`
+}
+
+func decodeMediaVariants(raw []byte) []MediaVariantRecord {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out []MediaVariantRecord
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func encodeMediaVariants(variants []MediaVariantRecord) ([]byte, error) {
+	if len(variants) == 0 {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(variants)
 }
 
 type reviewRow struct {
@@ -2801,6 +2882,8 @@ type playMediaEntity struct {
 	ObjectKey string    `gorm:"column:object_key"`
 	AltText   *string   `gorm:"column:alt_text"`
 	SortOrder int       `gorm:"column:sort_order"`
+	Variants  []byte    `gorm:"column:variants;type:jsonb"`
+	Blurhash  *string   `gorm:"column:blurhash"`
 	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
@@ -2835,6 +2918,8 @@ type playEditSuggestionMediaEntity struct {
 	ObjectKey    string    `gorm:"column:object_key"`
 	AltText      *string   `gorm:"column:alt_text"`
 	SortOrder    int       `gorm:"column:sort_order"`
+	Variants     []byte    `gorm:"column:variants;type:jsonb"`
+	Blurhash     *string   `gorm:"column:blurhash"`
 	CreatedAt    time.Time `gorm:"column:created_at"`
 }
 

@@ -12,16 +12,19 @@ import (
 const BasePath = "/media"
 
 type Dependencies struct {
-	DB             *gorm.DB
-	PlaysStorage   storage.Client
-	UsersStorage   storage.Client
-	DownloadURLTTL time.Duration
-	Cache          cache.Client
+	DB                   *gorm.DB
+	PlaysStorage         storage.Client
+	UsersStorage         storage.Client
+	DownloadURLTTL       time.Duration
+	Cache                cache.Client
+	PlaysVariantWidths   []int
+	AvatarsVariantWidths []int
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	repo := NewRepository(deps.DB)
 	service := NewService(repo, deps.PlaysStorage, deps.UsersStorage, deps.DownloadURLTTL, deps.Cache)
+	service.SetVariantWidths(deps.PlaysVariantWidths, deps.AvatarsVariantWidths)
 	handler := NewHandler(service)
 
 	group := v1.Group(BasePath)

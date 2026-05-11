@@ -15,9 +15,11 @@ type fakeRepo struct {
 	objectKey      string
 	objectKeyErr   error
 	objectKeyCalls int
+	variants       []MediaVariant
 	avatarKey      string
 	avatarKeyErr   error
 	avatarKeyCalls int
+	avatarVariants []MediaVariant
 }
 
 func (f *fakeRepo) GetPublishedPlayMediaObjectKey(_ context.Context, _ string, _ string) (string, error) {
@@ -34,6 +36,22 @@ func (f *fakeRepo) GetUserAvatarObjectKey(_ context.Context, _ string) (string, 
 		return "", f.avatarKeyErr
 	}
 	return f.avatarKey, nil
+}
+
+func (f *fakeRepo) GetPublishedPlayMedia(_ context.Context, _ string, _ string) (MediaRecord, error) {
+	f.objectKeyCalls++
+	if f.objectKeyErr != nil {
+		return MediaRecord{}, f.objectKeyErr
+	}
+	return MediaRecord{ObjectKey: f.objectKey, Variants: f.variants}, nil
+}
+
+func (f *fakeRepo) GetUserAvatar(_ context.Context, _ string) (MediaRecord, error) {
+	f.avatarKeyCalls++
+	if f.avatarKeyErr != nil {
+		return MediaRecord{}, f.avatarKeyErr
+	}
+	return MediaRecord{ObjectKey: f.avatarKey, Variants: f.avatarVariants}, nil
 }
 
 type fakeStorage struct {
@@ -123,11 +141,11 @@ func (f *fakeCache) Close() error { return nil }
 func TestGetPlayMediaRedirectURL_UsesCacheHit(t *testing.T) {
 	repo := &fakeRepo{objectKey: "plays/a.jpg"}
 	storageClient := &fakeStorage{url: "https://signed.example.com/fresh"}
-	cacheClient := &fakeCache{values: map[string]string{buildPlayMediaRedirectCacheKey(validPlayID, validMediaID): "https://signed.example.com/cached"}}
+	cacheClient := &fakeCache{values: map[string]string{buildPlayMediaRedirectCacheKey(validPlayID, validMediaID, 0): "https://signed.example.com/cached"}}
 
 	service := NewService(repo, storageClient, storage.NoopClient{}, 15*time.Minute, cacheClient)
 
-	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID)
+	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -149,7 +167,7 @@ func TestGetPlayMediaRedirectURL_CachesOnMiss(t *testing.T) {
 
 	service := NewService(repo, storageClient, storage.NoopClient{}, 15*time.Minute, cacheClient)
 
-	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID)
+	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -177,7 +195,7 @@ func TestGetPlayMediaRedirectURL_FallbackWhenCacheFails(t *testing.T) {
 
 	service := NewService(repo, storageClient, storage.NoopClient{}, 15*time.Minute, cacheClient)
 
-	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID)
+	url, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -196,7 +214,7 @@ func TestGetPlayMediaRedirectURL_SkipsCacheWhenTTLTooShort(t *testing.T) {
 
 	service := NewService(repo, storageClient, storage.NoopClient{}, 45*time.Second, cacheClient)
 
-	_, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID)
+	_, err := service.GetPlayMediaRedirectURL(context.Background(), validPlayID, validMediaID, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

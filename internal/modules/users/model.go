@@ -56,6 +56,15 @@ type UpdateMeProfilePatch struct {
 	Bio                *string
 	AvatarObjectKeySet bool
 	AvatarObjectKey    *string
+	AvatarVariants     []AvatarVariantRecord
+	AvatarBlurhash     *string
+}
+
+type AvatarVariantRecord struct {
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	ObjectKey string `json:"objectKey"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 type MeProfileRecord struct {

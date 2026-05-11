@@ -37,6 +37,9 @@ type Dependencies struct {
 	ImageQueue                *worker.Queue
 	ImageOptimizationEnabled  bool
 	ImageWebPQuality          int
+	ImageBlurhashEnabled      bool
+	ImageVariantWidthsPlays   []int
+	ImageVariantWidthsAvatars []int
 	MediaCache                cache.Client
 }
 
@@ -107,6 +110,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		ImageQueue:        deps.ImageQueue,
 		OptimizeImages:    deps.ImageOptimizationEnabled,
 		WebPQuality:       deps.ImageWebPQuality,
+		VariantWidths:     deps.ImageVariantWidthsAvatars,
+		BlurhashEnabled:   deps.ImageBlurhashEnabled,
 	})
 	plays.RegisterRoutes(v1, plays.Dependencies{
 		DB:                deps.DB,
@@ -117,14 +122,18 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		ImageQueue:        deps.ImageQueue,
 		OptimizeImages:    deps.ImageOptimizationEnabled,
 		WebPQuality:       deps.ImageWebPQuality,
+		VariantWidths:     deps.ImageVariantWidthsPlays,
+		BlurhashEnabled:   deps.ImageBlurhashEnabled,
 		Cache:             deps.MediaCache,
 	})
 	media.RegisterRoutes(v1, media.Dependencies{
-		DB:             deps.DB,
-		PlaysStorage:   playsStorage,
-		UsersStorage:   usersStorage,
-		DownloadURLTTL: deps.S3DownloadURLTTL,
-		Cache:          deps.MediaCache,
+		DB:                        deps.DB,
+		PlaysStorage:              playsStorage,
+		UsersStorage:              usersStorage,
+		DownloadURLTTL:            deps.S3DownloadURLTTL,
+		Cache:                     deps.MediaCache,
+		PlaysVariantWidths:        deps.ImageVariantWidthsPlays,
+		AvatarsVariantWidths:      deps.ImageVariantWidthsAvatars,
 	})
 	follows.RegisterRoutes(v1, follows.Dependencies{DB: deps.DB, AccessTokenParser: accessTokenParser})
 

@@ -24,6 +24,9 @@ type Config struct {
 	ImageOptimizationEnabled    bool
 	ImageWebPQuality            int
 	ImageWorkerPoolSize         int
+	ImageBlurhashEnabled        bool
+	ImageVariantWidthsPlays     []int
+	ImageVariantWidthsAvatars   []int
 	PlaysS3                     S3BucketConfig
 	UsersS3                     S3BucketConfig
 	JWTIssuer                   string
@@ -97,8 +100,20 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	imageWebPQuality := intFromEnv("IMAGE_WEBP_QUALITY", 80)
+	imageWebPQuality := intFromEnv("IMAGE_WEBP_QUALITY", 75)
 	imageWorkerPoolSize := intFromEnv("IMAGE_WORKER_POOL_SIZE", 2)
+	imageBlurhashEnabled, err := boolFromEnvStrict("IMAGE_BLURHASH_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+	imageVariantWidthsPlays, err := intListFromEnv("IMAGE_VARIANT_WIDTHS_PLAYS", []int{320, 720, 1080})
+	if err != nil {
+		return Config{}, err
+	}
+	imageVariantWidthsAvatars, err := intListFromEnv("IMAGE_VARIANT_WIDTHS_AVATARS", []int{96, 240, 512})
+	if err != nil {
+		return Config{}, err
+	}
 
 	playsS3 := S3BucketConfig{
 		Endpoint:        strings.TrimSpace(os.Getenv("PLAYS_S3_ENDPOINT")),
@@ -129,6 +144,9 @@ func Load() (Config, error) {
 		ImageOptimizationEnabled:    imageOptimizationEnabled,
 		ImageWebPQuality:            imageWebPQuality,
 		ImageWorkerPoolSize:         imageWorkerPoolSize,
+		ImageBlurhashEnabled:        imageBlurhashEnabled,
+		ImageVariantWidthsPlays:     imageVariantWidthsPlays,
+		ImageVariantWidthsAvatars:   imageVariantWidthsAvatars,
 		PlaysS3:                     playsS3,
 		UsersS3:                     usersS3,
 		JWTIssuer:                   envOrDefault("JWT_ISSUER", "butaqueando-api"),
@@ -201,6 +219,14 @@ func Load() (Config, error) {
 
 	if cfg.ImageWorkerPoolSize <= 0 {
 		return Config{}, fmt.Errorf("IMAGE_WORKER_POOL_SIZE must be greater than 0")
+	}
+
+	if len(cfg.ImageVariantWidthsPlays) == 0 {
+		return Config{}, fmt.Errorf("IMAGE_VARIANT_WIDTHS_PLAYS must contain at least one width")
+	}
+
+	if len(cfg.ImageVariantWidthsAvatars) == 0 {
+		return Config{}, fmt.Errorf("IMAGE_VARIANT_WIDTHS_AVATARS must contain at least one width")
 	}
 
 	if err := validateS3BucketConfig(cfg.PlaysS3, "PLAYS"); err != nil {
@@ -291,6 +317,36 @@ func boolFromEnvStrict(key string, fallback bool) (bool, error) {
 	}
 
 	return parsed, nil
+}
+
+func intListFromEnv(key string, fallback []int) ([]int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		out := make([]int, len(fallback))
+		copy(out, fallback)
+		return out, nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]int, 0, len(parts))
+	for _, raw := range parts {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be a comma-separated list of integers: %w", key, err)
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("%s values must be positive", key)
+		}
+		result = append(result, parsed)
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%s must contain at least one value", key)
+	}
+	return result, nil
 }
 
 func int64FromEnvStrict(key string, fallback int64) (int64, error) {

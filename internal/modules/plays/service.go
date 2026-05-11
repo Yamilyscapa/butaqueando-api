@@ -115,6 +115,8 @@ type Service struct {
 	imageQueue       ImageQueue
 	optimizeEnabled  bool
 	webpQuality      int
+	variantWidths    []int
+	blurhashEnabled  bool
 	cache            cache.Client
 }
 
@@ -217,6 +219,24 @@ func WithImageOptimization(enabled bool, webpQuality int) ServiceOption {
 	}
 }
 
+func WithImageVariantWidths(widths []int) ServiceOption {
+	return func(s *Service) {
+		copied := make([]int, 0, len(widths))
+		for _, w := range widths {
+			if w > 0 {
+				copied = append(copied, w)
+			}
+		}
+		s.variantWidths = copied
+	}
+}
+
+func WithBlurhashEnabled(enabled bool) ServiceOption {
+	return func(s *Service) {
+		s.blurhashEnabled = enabled
+	}
+}
+
 func WithCache(cacheClient cache.Client) ServiceOption {
 	return func(s *Service) {
 		s.cache = cacheClient
@@ -232,7 +252,9 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 		maxImageBytes:    defaultMaxImageBytes,
 		playMediaBaseURL: defaultPlayMediaPrefix,
 		optimizeEnabled:  true,
-		webpQuality:      80,
+		webpQuality:      75,
+		variantWidths:    []int{320, 720, 1080},
+		blurhashEnabled:  true,
 		cache:            cache.NoopClient{},
 	}
 
@@ -263,7 +285,11 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 	}
 
 	if service.webpQuality <= 0 || service.webpQuality > 100 {
-		service.webpQuality = 80
+		service.webpQuality = 75
+	}
+
+	if len(service.variantWidths) == 0 {
+		service.variantWidths = []int{320, 720, 1080}
 	}
 
 	if service.cache == nil {
@@ -1024,7 +1050,7 @@ func (s *Service) AttachSubmissionMedia(ctx context.Context, userID string, play
 		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
 	}
 
-	optimizedObjectKey, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
+	optimized, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
 	if err != nil {
 		return PlayMediaData{}, err
 	}
@@ -1032,9 +1058,11 @@ func (s *Service) AttachSubmissionMedia(ctx context.Context, userID string, play
 	record, err := s.repo.CreatePlayMedia(ctx, CreatePlayMediaParams{
 		PlayID:    playID,
 		Kind:      kind,
-		ObjectKey: optimizedObjectKey,
+		ObjectKey: optimized.PrimaryObjectKey,
 		AltText:   altText,
 		SortOrder: sortOrder,
+		Variants:  optimized.Variants,
+		Blurhash:  optimized.Blurhash,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -2195,16 +2223,18 @@ func (s *Service) AttachPlayEditSuggestionMedia(ctx context.Context, userID stri
 		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
 	}
 
-	optimizedObjectKey, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
+	optimized, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
 	if err != nil {
 		return PlayMediaData{}, err
 	}
 
 	mediaRecord, err := s.repo.CreatePlayEditSuggestionMedia(ctx, suggestionID, CreatePlayMediaParams{
 		Kind:      kind,
-		ObjectKey: optimizedObjectKey,
+		ObjectKey: optimized.PrimaryObjectKey,
 		AltText:   altText,
 		SortOrder: sortOrder,
+		Variants:  optimized.Variants,
+		Blurhash:  optimized.Blurhash,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -2592,7 +2622,7 @@ func (s *Service) AttachAdminSubmissionMedia(ctx context.Context, userID string,
 		return PlayMediaData{}, sharederrors.Validation("uploaded object size is invalid", nil)
 	}
 
-	optimizedObjectKey, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
+	optimized, err := s.optimizeAndStorePlayMedia(ctx, objectKey)
 	if err != nil {
 		return PlayMediaData{}, err
 	}
@@ -2600,9 +2630,11 @@ func (s *Service) AttachAdminSubmissionMedia(ctx context.Context, userID string,
 	record, err := s.repo.CreatePlayMedia(ctx, CreatePlayMediaParams{
 		PlayID:    playID,
 		Kind:      kind,
-		ObjectKey: optimizedObjectKey,
+		ObjectKey: optimized.PrimaryObjectKey,
 		AltText:   altText,
 		SortOrder: sortOrder,
+		Variants:  optimized.Variants,
+		Blurhash:  optimized.Blurhash,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -3232,12 +3264,23 @@ func formatTimePointer(raw *time.Time) *string {
 }
 
 func mapPlayMediaRecord(playID string, record PlayMediaRecord, playMediaBaseURL string) PlayMediaData {
+	base := buildPlayMediaURL(playMediaBaseURL, playID, record.ID)
+	variants := make([]PlayMediaVariantData, 0, len(record.Variants))
+	for _, v := range record.Variants {
+		variants = append(variants, PlayMediaVariantData{
+			Width:  v.Width,
+			Height: v.Height,
+			URL:    fmt.Sprintf("%s?w=%d", base, v.Width),
+		})
+	}
 	return PlayMediaData{
 		ID:        record.ID,
 		Kind:      record.Kind,
-		URL:       buildPlayMediaURL(playMediaBaseURL, playID, record.ID),
+		URL:       base,
 		AltText:   record.AltText,
 		SortOrder: record.SortOrder,
+		Variants:  variants,
+		Blurhash:  record.Blurhash,
 	}
 }
 
@@ -3277,37 +3320,127 @@ func normalizeOptionalText(raw *string) *string {
 	return &trimmed
 }
 
-func (s *Service) optimizeAndStorePlayMedia(ctx context.Context, objectKey string) (string, error) {
+type optimizedMediaResult struct {
+	PrimaryObjectKey string
+	Variants         []MediaVariantRecord
+	Blurhash         *string
+}
+
+func (s *Service) optimizeAndStorePlayMedia(ctx context.Context, objectKey string) (optimizedMediaResult, error) {
 	content, err := s.mediaStorage.GetObject(ctx, storage.GetObjectInput{ObjectKey: objectKey})
 	if err != nil {
 		if storage.IsNotFoundError(err) {
-			return "", sharederrors.Validation("uploaded object was not found", nil)
+			return optimizedMediaResult{}, sharederrors.Validation("uploaded object was not found", nil)
 		}
 
-		return "", sharederrors.Internal("failed to attach media", nil)
+		return optimizedMediaResult{}, sharederrors.Internal("failed to attach media", nil)
 	}
 
-	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
-		Quality:           s.webpQuality,
-		MaxWidth:          playMediaMaxWidth,
-		MaxHeight:         playMediaMaxHeight,
-		TargetContentType: "image/webp",
-	})
+	plan := buildPlayMediaVariantPlan(s.variantWidths, s.webpQuality)
+	results, err := imageproc.OptimizeImageVariants(content, plan)
 	if err != nil {
-		return "", sharederrors.Validation("uploaded object is not a valid image", nil)
+		return optimizedMediaResult{}, sharederrors.Validation("uploaded object is not a valid image", nil)
 	}
 
-	optimizedObjectKey := normalizeWebPObjectKey(objectKey)
-	if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
-		ObjectKey:    optimizedObjectKey,
-		Content:      result.Content,
-		ContentType:  result.ContentType,
-		CacheControl: "public, max-age=31536000, immutable",
-	}); err != nil {
-		return "", sharederrors.Internal("failed to attach media", nil)
+	primaryWidth := plan[len(plan)-1].MaxWidth
+	primaryObjectKey := ""
+	variants := make([]MediaVariantRecord, 0, len(results))
+
+	for index, res := range results {
+		spec := plan[index]
+		variantKey := variantObjectKey(objectKey, spec.MaxWidth, primaryWidth)
+		if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
+			ObjectKey:    variantKey,
+			Content:      res.Content,
+			ContentType:  res.ContentType,
+			CacheControl: "public, max-age=31536000, immutable",
+		}); err != nil {
+			return optimizedMediaResult{}, sharederrors.Internal("failed to attach media", nil)
+		}
+
+		variants = append(variants, MediaVariantRecord{
+			Width:     res.Width,
+			Height:    res.Height,
+			ObjectKey: variantKey,
+			SizeBytes: int64(len(res.Content)),
+		})
+
+		if spec.MaxWidth == primaryWidth {
+			primaryObjectKey = variantKey
+		}
 	}
 
-	return optimizedObjectKey, nil
+	if primaryObjectKey == "" && len(variants) > 0 {
+		primaryObjectKey = variants[len(variants)-1].ObjectKey
+	}
+
+	result := optimizedMediaResult{
+		PrimaryObjectKey: primaryObjectKey,
+		Variants:         variants,
+	}
+
+	if s.blurhashEnabled {
+		if hash, hashErr := imageproc.GenerateBlurhashFromBytes(content); hashErr == nil && hash != "" {
+			h := hash
+			result.Blurhash = &h
+		}
+	}
+
+	return result, nil
+}
+
+func buildPlayMediaVariantPlan(widths []int, quality int) []imageproc.VariantSpec {
+	if len(widths) == 0 {
+		widths = []int{320, 720, 1080}
+	}
+	sorted := make([]int, len(widths))
+	copy(sorted, widths)
+	sortInts(sorted)
+
+	plan := make([]imageproc.VariantSpec, 0, len(sorted))
+	for _, w := range sorted {
+		h := variantHeightForWidth(w)
+		plan = append(plan, imageproc.VariantSpec{
+			MaxWidth:          w,
+			MaxHeight:         h,
+			Quality:           quality,
+			TargetContentType: "image/webp",
+		})
+	}
+	return plan
+}
+
+// variantHeightForWidth keeps the 9:16-ish portrait envelope used by the original 1080x1920 cap.
+func variantHeightForWidth(width int) int {
+	h := (width * playMediaMaxHeight) / playMediaMaxWidth
+	if h <= 0 {
+		h = width
+	}
+	return h
+}
+
+func sortInts(values []int) {
+	for i := 1; i < len(values); i++ {
+		j := i
+		for j > 0 && values[j-1] > values[j] {
+			values[j-1], values[j] = values[j], values[j-1]
+			j--
+		}
+	}
+}
+
+// variantObjectKey returns the canonical S3 key for a variant.
+// The largest variant retains the legacy <uuid>.webp path so unmigrated clients keep working.
+func variantObjectKey(originalKey string, width int, primaryWidth int) string {
+	base := normalizeWebPObjectKey(originalKey)
+	if width == primaryWidth {
+		return base
+	}
+	lastDot := strings.LastIndex(base, ".")
+	if lastDot <= 0 {
+		return fmt.Sprintf("%s-%d", base, width)
+	}
+	return fmt.Sprintf("%s-%d%s", base[:lastDot], width, base[lastDot:])
 }
 
 func normalizeWebPObjectKey(objectKey string) string {

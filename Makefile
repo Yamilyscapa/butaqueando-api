@@ -1,6 +1,6 @@
 APP_NAME := butaqueando-api
 
-.PHONY: run test tidy db-schema db-seed db-seed-media db-bootstrap
+.PHONY: run test tidy db-schema db-seed db-seed-media db-bootstrap backfill-media
 
 run:
 	go run ./cmd/api
@@ -21,3 +21,6 @@ db-seed-media:
 	bash -c 'if [ -f .env ]; then set -a && source .env && set +a; fi; go run ./cmd/seedmedia'
 
 db-bootstrap: db-schema db-seed db-seed-media
+
+backfill-media:
+	bash -c 'if [ -f .env ]; then set -a && source .env && set +a; fi; go run ./cmd/backfillmedia'

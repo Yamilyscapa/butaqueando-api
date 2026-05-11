@@ -99,6 +99,9 @@ func Bootstrap() (*Application, error) {
 		ImageQueue:                imageQueue,
 		ImageOptimizationEnabled:  cfg.ImageOptimizationEnabled,
 		ImageWebPQuality:          cfg.ImageWebPQuality,
+		ImageBlurhashEnabled:      cfg.ImageBlurhashEnabled,
+		ImageVariantWidthsPlays:   cfg.ImageVariantWidthsPlays,
+		ImageVariantWidthsAvatars: cfg.ImageVariantWidthsAvatars,
 		MediaCache:                mediaCache,
 	})
 

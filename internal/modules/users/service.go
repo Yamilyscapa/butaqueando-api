@@ -40,6 +40,8 @@ type Service struct {
 	imageQueue       ImageQueue
 	optimizeEnabled  bool
 	webpQuality      int
+	variantWidths    []int
+	blurhashEnabled  bool
 }
 
 type ServiceOption func(*Service)
@@ -135,6 +137,24 @@ func WithImageOptimization(enabled bool, webpQuality int) ServiceOption {
 	}
 }
 
+func WithImageVariantWidths(widths []int) ServiceOption {
+	return func(s *Service) {
+		copied := make([]int, 0, len(widths))
+		for _, w := range widths {
+			if w > 0 {
+				copied = append(copied, w)
+			}
+		}
+		s.variantWidths = copied
+	}
+}
+
+func WithBlurhashEnabled(enabled bool) ServiceOption {
+	return func(s *Service) {
+		s.blurhashEnabled = enabled
+	}
+}
+
 func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 	service := &Service{
 		repo:             repo,
@@ -143,7 +163,9 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 		maxImageBytes:    defaultMaxImageBytes,
 		userMediaBaseURL: defaultUserMediaPrefix,
 		optimizeEnabled:  true,
-		webpQuality:      80,
+		webpQuality:      75,
+		variantWidths:    []int{96, 240, 512},
+		blurhashEnabled:  true,
 	}
 
 	for _, option := range options {
@@ -169,7 +191,11 @@ func NewService(repo repositoryPort, options ...ServiceOption) *Service {
 	}
 
 	if service.webpQuality <= 0 || service.webpQuality > 100 {
-		service.webpQuality = 80
+		service.webpQuality = 75
+	}
+
+	if len(service.variantWidths) == 0 {
+		service.variantWidths = []int{96, 240, 512}
 	}
 
 	return service
@@ -246,12 +272,14 @@ func (s *Service) UpdateMeProfile(ctx context.Context, userID string, req Update
 				return MeProfileData{}, err
 			}
 
-			optimizedObjectKey, optimizeErr := s.optimizeAndStoreAvatar(ctx, *patch.AvatarObjectKey)
+			optimized, optimizeErr := s.optimizeAndStoreAvatar(ctx, *patch.AvatarObjectKey)
 			if optimizeErr != nil {
 				return MeProfileData{}, optimizeErr
 			}
 
-			patch.AvatarObjectKey = &optimizedObjectKey
+			patch.AvatarObjectKey = &optimized.PrimaryObjectKey
+			patch.AvatarVariants = optimized.Variants
+			patch.AvatarBlurhash = optimized.Blurhash
 		}
 	}
 
@@ -369,37 +397,111 @@ func validateAndBuildPatch(req UpdateMeProfileRequest) (UpdateMeProfilePatch, er
 	return patch, nil
 }
 
-func (s *Service) optimizeAndStoreAvatar(ctx context.Context, objectKey string) (string, error) {
+type optimizedAvatarResult struct {
+	PrimaryObjectKey string
+	Variants         []AvatarVariantRecord
+	Blurhash         *string
+}
+
+func (s *Service) optimizeAndStoreAvatar(ctx context.Context, objectKey string) (optimizedAvatarResult, error) {
 	content, err := s.mediaStorage.GetObject(ctx, storage.GetObjectInput{ObjectKey: objectKey})
 	if err != nil {
 		if storage.IsNotFoundError(err) {
-			return "", sharederrors.Validation("uploaded object was not found", nil)
+			return optimizedAvatarResult{}, sharederrors.Validation("uploaded object was not found", nil)
 		}
 
-		return "", sharederrors.Internal("failed to update profile", nil)
+		return optimizedAvatarResult{}, sharederrors.Internal("failed to update profile", nil)
 	}
 
-	result, err := imageproc.OptimizeImage(content, imageproc.OptimizeOptions{
-		Quality:           s.webpQuality,
-		MaxWidth:          avatarMaxWidth,
-		MaxHeight:         avatarMaxHeight,
-		TargetContentType: "image/webp",
-	})
+	plan := buildAvatarVariantPlan(s.variantWidths, s.webpQuality)
+	results, err := imageproc.OptimizeImageVariants(content, plan)
 	if err != nil {
-		return "", sharederrors.Validation("uploaded object is not a valid image", nil)
+		return optimizedAvatarResult{}, sharederrors.Validation("uploaded object is not a valid image", nil)
 	}
 
-	optimizedObjectKey := normalizeWebPObjectKey(objectKey)
-	if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
-		ObjectKey:    optimizedObjectKey,
-		Content:      result.Content,
-		ContentType:  result.ContentType,
-		CacheControl: "public, max-age=31536000, immutable",
-	}); err != nil {
-		return "", sharederrors.Internal("failed to update profile", nil)
+	primaryWidth := plan[len(plan)-1].MaxWidth
+	primaryObjectKey := ""
+	variants := make([]AvatarVariantRecord, 0, len(results))
+
+	for index, res := range results {
+		spec := plan[index]
+		variantKey := avatarVariantObjectKey(objectKey, spec.MaxWidth, primaryWidth)
+		if err := s.mediaStorage.PutObject(ctx, storage.PutObjectInput{
+			ObjectKey:    variantKey,
+			Content:      res.Content,
+			ContentType:  res.ContentType,
+			CacheControl: "public, max-age=31536000, immutable",
+		}); err != nil {
+			return optimizedAvatarResult{}, sharederrors.Internal("failed to update profile", nil)
+		}
+
+		variants = append(variants, AvatarVariantRecord{
+			Width:     res.Width,
+			Height:    res.Height,
+			ObjectKey: variantKey,
+			SizeBytes: int64(len(res.Content)),
+		})
+
+		if spec.MaxWidth == primaryWidth {
+			primaryObjectKey = variantKey
+		}
 	}
 
-	return optimizedObjectKey, nil
+	if primaryObjectKey == "" && len(variants) > 0 {
+		primaryObjectKey = variants[len(variants)-1].ObjectKey
+	}
+
+	result := optimizedAvatarResult{
+		PrimaryObjectKey: primaryObjectKey,
+		Variants:         variants,
+	}
+
+	if s.blurhashEnabled {
+		if hash, hashErr := imageproc.GenerateBlurhashFromBytes(content); hashErr == nil && hash != "" {
+			h := hash
+			result.Blurhash = &h
+		}
+	}
+
+	return result, nil
+}
+
+func buildAvatarVariantPlan(widths []int, quality int) []imageproc.VariantSpec {
+	if len(widths) == 0 {
+		widths = []int{96, 240, 512}
+	}
+	sorted := make([]int, len(widths))
+	copy(sorted, widths)
+	for i := 1; i < len(sorted); i++ {
+		j := i
+		for j > 0 && sorted[j-1] > sorted[j] {
+			sorted[j-1], sorted[j] = sorted[j], sorted[j-1]
+			j--
+		}
+	}
+
+	plan := make([]imageproc.VariantSpec, 0, len(sorted))
+	for _, w := range sorted {
+		plan = append(plan, imageproc.VariantSpec{
+			MaxWidth:          w,
+			MaxHeight:         w,
+			Quality:           quality,
+			TargetContentType: "image/webp",
+		})
+	}
+	return plan
+}
+
+func avatarVariantObjectKey(originalKey string, width int, primaryWidth int) string {
+	base := normalizeWebPObjectKey(originalKey)
+	if width == primaryWidth {
+		return base
+	}
+	lastDot := strings.LastIndex(base, ".")
+	if lastDot <= 0 {
+		return fmt.Sprintf("%s-%d", base, width)
+	}
+	return fmt.Sprintf("%s-%d%s", base[:lastDot], width, base[lastDot:])
 }
 
 func normalizeWebPObjectKey(objectKey string) string {

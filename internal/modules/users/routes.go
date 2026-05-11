@@ -20,6 +20,8 @@ type Dependencies struct {
 	ImageQueue        ImageQueue
 	OptimizeImages    bool
 	WebPQuality       int
+	VariantWidths     []int
+	BlurhashEnabled   bool
 }
 
 func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
@@ -31,6 +33,8 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 		WithMaxImageBytes(deps.MaxImageBytes),
 		WithImageQueue(deps.ImageQueue),
 		WithImageOptimization(deps.OptimizeImages, deps.WebPQuality),
+		WithImageVariantWidths(deps.VariantWidths),
+		WithBlurhashEnabled(deps.BlurhashEnabled),
 	)
 	handler := NewHandler(service)
 	group := v1.Group(BasePath)
