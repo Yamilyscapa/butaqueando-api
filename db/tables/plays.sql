@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS app.plays (
   title text NOT NULL,
   synopsis text NOT NULL,
   director text NOT NULL,
+  production text NULL,
   duration_minutes integer NOT NULL CHECK (duration_minutes > 0),
   theater_name text NOT NULL,
   is_custom_theater boolean NOT NULL DEFAULT false,

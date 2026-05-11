@@ -241,6 +241,7 @@ func (r *Repository) GetPublishedPlayByID(ctx context.Context, playID string) (P
 			p.theater_name,
 			p.is_custom_theater,
 			p.custom_genre_name,
+			p.production,
 			p.city,
 			p.availability_status,
 			p.published_at,
@@ -268,6 +269,7 @@ func (r *Repository) GetPublishedPlayByID(ctx context.Context, playID string) (P
 		AverageRating:      row.AverageRating,
 		ReviewCount:        row.ReviewCount,
 		CustomGenreName:    row.CustomGenreName,
+		Production:         row.Production,
 	}, nil
 }
 
@@ -974,6 +976,7 @@ func (r *Repository) CreateSubmission(ctx context.Context, userID string, params
 		TheaterName:        params.TheaterName,
 		IsCustomTheater:    params.IsCustomTheater,
 		CustomGenreName:    params.CustomGenreName,
+		Production:         params.Production,
 		City:               params.City,
 		AvailabilityStatus: params.AvailabilityStatus,
 		CurationStatus:     "pending",
@@ -1373,6 +1376,7 @@ func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, par
 			p.theater_name,
 			p.is_custom_theater,
 			p.custom_genre_name,
+			p.production,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -1488,6 +1492,7 @@ func (r *Repository) ListAdminSubmissions(ctx context.Context, params ListSubmis
 			p.theater_name,
 			p.is_custom_theater,
 			p.custom_genre_name,
+			p.production,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -2512,6 +2517,7 @@ func mapSubmissionRows(rows []submissionRow) []SubmissionRecord {
 			PublishedAt:        row.PublishedAt,
 			RejectedReason:     row.RejectedReason,
 			CustomGenreName:    row.CustomGenreName,
+			Production:         row.Production,
 			CreatedAt:          row.CreatedAt,
 			UpdatedAt:          row.UpdatedAt,
 		})
@@ -2576,6 +2582,7 @@ func (r *Repository) getSubmissionByUUID(ctx context.Context, playUUID uuid.UUID
 			p.theater_name,
 			p.is_custom_theater,
 			p.custom_genre_name,
+			p.production,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -2666,6 +2673,7 @@ type playDetailsRow struct {
 	TheaterName        string    `gorm:"column:theater_name"`
 	IsCustomTheater    bool      `gorm:"column:is_custom_theater"`
 	CustomGenreName    *string   `gorm:"column:custom_genre_name"`
+	Production         *string   `gorm:"column:production"`
 	City               *string   `gorm:"column:city"`
 	AvailabilityStatus string    `gorm:"column:availability_status"`
 	PublishedAt        time.Time `gorm:"column:published_at"`
@@ -2695,6 +2703,7 @@ type submissionRow struct {
 	TheaterName        string     `gorm:"column:theater_name"`
 	IsCustomTheater    bool       `gorm:"column:is_custom_theater"`
 	CustomGenreName    *string    `gorm:"column:custom_genre_name"`
+	Production         *string    `gorm:"column:production"`
 	City               *string    `gorm:"column:city"`
 	AvailabilityStatus string     `gorm:"column:availability_status"`
 	CurationStatus     string     `gorm:"column:curation_status"`
@@ -2874,6 +2883,7 @@ type playEntity struct {
 	TheaterName        string     `gorm:"column:theater_name"`
 	IsCustomTheater    bool       `gorm:"column:is_custom_theater"`
 	CustomGenreName    *string    `gorm:"column:custom_genre_name"`
+	Production         *string    `gorm:"column:production"`
 	City               *string    `gorm:"column:city"`
 	AvailabilityStatus string     `gorm:"column:availability_status"`
 	CurationStatus     string     `gorm:"column:curation_status"`

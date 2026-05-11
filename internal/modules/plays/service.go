@@ -912,6 +912,7 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 	if err := s.validateCityAndTheater(ctx, city, theaterName, req.IsCustomTheater); err != nil {
 		return SubmissionData{}, err
 	}
+	production := normalizeOptionalText(req.Production)
 	now := time.Now().UTC()
 	record, err := s.repo.CreateSubmission(ctx, userID, CreateSubmissionParams{
 		Title:              title,
@@ -924,6 +925,7 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		AvailabilityStatus: availabilityStatus,
 		GenreIDs:           genreIDs,
 		CustomGenreName:    customGenreName,
+		Production:         production,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	})
@@ -2925,6 +2927,7 @@ func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []Pla
 		},
 		Genres:          genreItems,
 		CustomGenreName: play.CustomGenreName,
+		Production:      play.Production,
 		Cast:            castItems,
 		Media:           mediaItems,
 	}
@@ -3025,6 +3028,7 @@ func mapSubmissionRecord(record SubmissionRecord, genres []PlayGenreRecord) Subm
 		AvailabilityStatus: record.AvailabilityStatus,
 		Genres:             mapPlayGenreRecords(genres),
 		CustomGenreName:    record.CustomGenreName,
+		Production:         record.Production,
 		CurationStatus:     record.CurationStatus,
 		CreatedByUserID:    record.CreatedByUserID,
 		ModeratedByUserID:  record.ModeratedByUserID,

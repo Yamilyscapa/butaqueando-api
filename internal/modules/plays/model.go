@@ -111,6 +111,7 @@ type CreateSubmissionRequest struct {
 	AvailabilityStatus *string  `json:"availabilityStatus"`
 	GenreIDs           []string `json:"genreIds"`
 	CustomGenreName    *string  `json:"customGenreName"`
+	Production         *string  `json:"production"`
 }
 
 type CreateSubmissionMediaUploadRequest struct {
@@ -284,6 +285,7 @@ type PlayDetailsData struct {
 	Stats              PlayStatsData        `json:"stats"`
 	Genres             []PlayGenreData      `json:"genres"`
 	CustomGenreName    *string              `json:"customGenreName,omitempty"`
+	Production         *string              `json:"production,omitempty"`
 	Cast               []PlayCastMemberData `json:"cast"`
 	Media              []PlayMediaData      `json:"media"`
 }
@@ -334,6 +336,7 @@ type SubmissionData struct {
 	AvailabilityStatus string          `json:"availabilityStatus"`
 	Genres             []PlayGenreData `json:"genres"`
 	CustomGenreName    *string         `json:"customGenreName,omitempty"`
+	Production         *string         `json:"production,omitempty"`
 	Media              []PlayMediaData `json:"media,omitempty"`
 	CurationStatus     string          `json:"curationStatus"`
 	CreatedByUserID    string          `json:"createdByUserId"`
@@ -511,6 +514,7 @@ type PlayDetailsRecord struct {
 	AverageRating      *float64
 	ReviewCount        int64
 	CustomGenreName    *string
+	Production         *string
 }
 
 type PlayGenreRecord struct {
@@ -614,6 +618,7 @@ type CreateSubmissionParams struct {
 	AvailabilityStatus string
 	GenreIDs           []string
 	CustomGenreName    *string
+	Production         *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -731,6 +736,7 @@ type SubmissionRecord struct {
 	PublishedAt        *time.Time
 	RejectedReason     *string
 	CustomGenreName    *string
+	Production         *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
