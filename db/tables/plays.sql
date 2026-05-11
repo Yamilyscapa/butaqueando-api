@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS app.plays (
   director text NOT NULL,
   duration_minutes integer NOT NULL CHECK (duration_minutes > 0),
   theater_name text NOT NULL,
+  is_custom_theater boolean NOT NULL DEFAULT false,
+  custom_genre_name text NULL,
   city text,
   availability_status app.play_availability_status NOT NULL DEFAULT 'in_theaters',
   curation_status app.curation_status NOT NULL DEFAULT 'pending',

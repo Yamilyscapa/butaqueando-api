@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS app.play_edit_suggestions (
   director text NOT NULL,
   duration_minutes integer NOT NULL CHECK (duration_minutes > 0),
   theater_name text NOT NULL,
+  is_custom_theater boolean NOT NULL DEFAULT false,
+  custom_genre_name text NULL,
   city text,
   availability_status app.play_availability_status NOT NULL DEFAULT 'in_theaters',
   moderated_by_user_id uuid NULL REFERENCES app.users(id) ON DELETE RESTRICT,
