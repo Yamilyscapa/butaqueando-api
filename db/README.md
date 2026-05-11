@@ -2,6 +2,8 @@
 
 `db/schema.sql` is the canonical schema entrypoint for this repository.
 
+Database changes are consumed by the Go API under `api/internal/` and should stay aligned with `api/prd.md` invariants.
+
 ## Apply schema
 
 ```bash
@@ -23,6 +25,8 @@ make db-bootstrap
 This will apply the schema, load realistic sample data, and upload deterministic Unsplash media objects for local development.
 
 If bucket variables or `UNSPLASH_ACCESS_KEY` are not configured, the media upload step is skipped and schema/data seeding still succeeds.
+
+For API-only local work, `make db-schema && make db-seed` is enough.
 
 ## Upload seeded media only
 
@@ -58,7 +62,8 @@ All seeded users share the password: `password`
 - `app.play_media` stores `object_key` (not public URL).
 - `app.play_media` uniqueness is `(play_id, object_key)`.
 - `app.user_profiles.avatar_object_key` is nullable (avatar is optional).
-- Read URLs for media are generated at API layer via stable endpoints + redirect to pre-signed bucket URLs.
+- Read URLs for media are generated at API layer via stable `/v1/media/...` endpoints + redirect to pre-signed bucket URLs.
+- Read endpoints can resolve optimized width variants via `?w=` when available.
 - Seeded media uses deterministic `object_key` entries under `plays/...` and `users/...` and is backed by `make db-seed-media` uploads.
 - Seeded play assets are theater-related photos; seeded user avatars are people portraits.
 
@@ -69,3 +74,5 @@ All seeded users share the password: `password`
   - updates media uniqueness constraint
   - adds `app.user_profiles.avatar_object_key`
 - `000002_media_storage_refactor.down.sql` reverts those changes.
+
+Additional migrations may exist after this refactor; use `db/migrations/` as the authoritative list.

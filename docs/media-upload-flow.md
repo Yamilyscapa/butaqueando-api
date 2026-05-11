@@ -1,6 +1,6 @@
 # Media Upload Flow (Railway Buckets)
 
-This API uses private Railway Buckets for both play media and user media.
+This API uses private S3-compatible buckets (Railway Buckets in production/dev setups) for both play media and user media.
 
 - Plays bucket: submission media (`poster`, `photo`)
 - Users bucket: profile avatars
@@ -9,9 +9,10 @@ Buckets are private, so clients never receive permanent public object URLs.
 
 ## Key principles
 
-1. Client uploads directly to bucket using pre-signed `PUT` URL.
-2. API stores only `object_key` in database.
-3. API serves stable media routes and redirects to short-lived pre-signed `GET` URL.
+1. Client uploads directly to bucket using a pre-signed `PUT` URL.
+2. API stores only `object_key` in the database.
+3. API serves stable read routes and redirects to short-lived pre-signed `GET` URLs.
+4. Optional image optimization generates width variants and blurhash metadata when enabled.
 
 ## Play media flow
 
@@ -125,12 +126,45 @@ If `avatarObjectKey` is omitted, avatar remains unchanged.
 
 These routes return a temporary redirect to a short-lived pre-signed `GET` URL.
 
+### Width variants (`w` query)
+
+Both read routes accept an optional `w` query param:
+
+- example: `GET /v1/media/plays/:playId/:mediaId?w=720`
+- example: `GET /v1/media/users/:userId/avatar?w=240`
+
+Behavior:
+
+- invalid or missing `w` falls back to original object routing
+- very large values are clamped server-side
+- when optimization variants are available, the nearest configured width variant is served
+
+Configured widths come from:
+
+- `IMAGE_VARIANT_WIDTHS_PLAYS`
+- `IMAGE_VARIANT_WIDTHS_AVATARS`
+
+### Caching and redirect behavior
+
+- Redirect target URLs are pre-signed and short-lived (`S3_DOWNLOAD_URL_TTL`).
+- Avatar redirect responses are marked `Cache-Control: no-store, private`.
+- Media resolution can use Redis-backed cache when `REDIS_URL` is configured.
+
 ## Validation defaults
 
 - allowed image types: `image/jpeg`, `image/png`, `image/webp`
 - max image size configured by `S3_MAX_IMAGE_BYTES`
 - upload URL TTL: `S3_UPLOAD_URL_TTL`
 - download URL TTL: `S3_DOWNLOAD_URL_TTL`
+
+## Optimization pipeline
+
+When `IMAGE_OPTIMIZATION_ENABLED=true`, uploaded media can be processed asynchronously:
+
+- WebP generation quality from `IMAGE_WEBP_QUALITY`
+- variant generation using play/avatar width config
+- optional blurhash generation controlled by `IMAGE_BLURHASH_ENABLED`
+- background processing queue size controlled by `IMAGE_WORKER_POOL_SIZE`
 
 ## Local mock media bootstrap
 
