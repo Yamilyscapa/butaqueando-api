@@ -1,0 +1,1 @@
+-- Postgres does not support removing enum values safely; down migration is intentionally a no-op.

@@ -887,22 +887,29 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		return SubmissionData{}, err
 	}
 
-	genreIDs, err := normalizeSubmissionGenreIDs(req.GenreIDs)
+	customGenreName, err := normalizeCustomGenreName(req.CustomGenreName)
 	if err != nil {
 		return SubmissionData{}, err
 	}
 
-	genreCount, err := s.repo.CountGenresByIDs(ctx, genreIDs)
+	genreIDs, err := normalizeSubmissionGenreIDsAllowEmpty(req.GenreIDs, customGenreName != nil)
 	if err != nil {
-		return SubmissionData{}, sharederrors.Internal("failed to create submission", nil)
+		return SubmissionData{}, err
 	}
 
-	if genreCount != int64(len(genreIDs)) {
-		return SubmissionData{}, sharederrors.Validation("one or more genreIds are invalid", nil)
+	if len(genreIDs) > 0 {
+		genreCount, err := s.repo.CountGenresByIDs(ctx, genreIDs)
+		if err != nil {
+			return SubmissionData{}, sharederrors.Internal("failed to create submission", nil)
+		}
+
+		if genreCount != int64(len(genreIDs)) {
+			return SubmissionData{}, sharederrors.Validation("one or more genreIds are invalid", nil)
+		}
 	}
 
 	city := normalizeOptionalText(req.City)
-	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+	if err := s.validateCityAndTheater(ctx, city, theaterName, req.IsCustomTheater); err != nil {
 		return SubmissionData{}, err
 	}
 	now := time.Now().UTC()
@@ -912,9 +919,11 @@ func (s *Service) CreateSubmission(ctx context.Context, userID string, req Creat
 		Director:           director,
 		DurationMinutes:    req.DurationMinutes,
 		TheaterName:        theaterName,
+		IsCustomTheater:    req.IsCustomTheater,
 		City:               city,
 		AvailabilityStatus: availabilityStatus,
 		GenreIDs:           genreIDs,
+		CustomGenreName:    customGenreName,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	})
@@ -1112,6 +1121,10 @@ func (s *Service) ListMyWatched(ctx context.Context, userID string, query ListMy
 	return s.listMyEngagementPlays(ctx, userID, query, "attended", "failed to load watched plays")
 }
 
+func (s *Service) ListMyFavorites(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	return s.listMyEngagementPlays(ctx, userID, query, "favorited", "failed to load favorites")
+}
+
 func (s *Service) ListUserWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
 	if !isValidUUID(userID) {
 		return MyEngagementPlayListData{}, sharederrors.Validation("invalid userId", nil)
@@ -1193,7 +1206,7 @@ func (s *Service) UpdateMySubmission(ctx context.Context, userID string, playID 
 		city = patch.City
 	}
 
-	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+	if err := s.validateCityAndTheater(ctx, city, theaterName, false); err != nil {
 		return SubmissionData{}, err
 	}
 
@@ -1378,7 +1391,7 @@ func (s *Service) CreatePlayEditSuggestion(ctx context.Context, userID string, r
 		}
 	}
 
-	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+	if err := s.validateCityAndTheater(ctx, city, theaterName, false); err != nil {
 		return PlayEditSuggestionData{}, err
 	}
 	availabilityStatus := current.AvailabilityStatus
@@ -1531,7 +1544,7 @@ func (s *Service) UpdateMyPlayEditSuggestion(ctx context.Context, userID string,
 		city = patch.City
 	}
 
-	if err := s.validateCityAndTheater(ctx, city, theaterName); err != nil {
+	if err := s.validateCityAndTheater(ctx, city, theaterName, false); err != nil {
 		return PlayEditSuggestionData{}, err
 	}
 
@@ -2713,8 +2726,8 @@ func (s *Service) SetEngagement(ctx context.Context, userID string, playID strin
 	}
 
 	kind := strings.ToLower(strings.TrimSpace(req.Kind))
-	if kind != "wishlist" && kind != "attended" {
-		return EngagementStateData{}, sharederrors.Validation("kind must be one of: wishlist, attended", nil)
+	if kind != "wishlist" && kind != "attended" && kind != "favorited" {
+		return EngagementStateData{}, sharederrors.Validation("kind must be one of: wishlist, attended, favorited", nil)
 	}
 
 	isPublished, err := s.repo.IsPlayPublished(ctx, playID)
@@ -2743,8 +2756,8 @@ func (s *Service) DeleteEngagement(ctx context.Context, userID string, playID st
 	}
 
 	normalizedKind := strings.ToLower(strings.TrimSpace(kind))
-	if normalizedKind != "wishlist" && normalizedKind != "attended" {
-		return EngagementStateData{}, sharederrors.Validation("kind must be one of: wishlist, attended", nil)
+	if normalizedKind != "wishlist" && normalizedKind != "attended" && normalizedKind != "favorited" {
+		return EngagementStateData{}, sharederrors.Validation("kind must be one of: wishlist, attended, favorited", nil)
 	}
 
 	isPublished, err := s.repo.IsPlayPublished(ctx, playID)
@@ -2902,6 +2915,7 @@ func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []Pla
 		Director:           play.Director,
 		DurationMinutes:    play.DurationMinutes,
 		TheaterName:        play.TheaterName,
+		IsCustomTheater:    play.IsCustomTheater,
 		City:               play.City,
 		AvailabilityStatus: play.AvailabilityStatus,
 		PublishedAt:        play.PublishedAt.UTC().Format(time.RFC3339Nano),
@@ -2909,9 +2923,10 @@ func mapPlayDetails(play PlayDetailsRecord, genres []PlayGenreRecord, cast []Pla
 			AverageRating: play.AverageRating,
 			ReviewCount:   play.ReviewCount,
 		},
-		Genres: genreItems,
-		Cast:   castItems,
-		Media:  mediaItems,
+		Genres:          genreItems,
+		CustomGenreName: play.CustomGenreName,
+		Cast:            castItems,
+		Media:           mediaItems,
 	}
 }
 
@@ -3005,9 +3020,11 @@ func mapSubmissionRecord(record SubmissionRecord, genres []PlayGenreRecord) Subm
 		Director:           record.Director,
 		DurationMinutes:    record.DurationMinutes,
 		TheaterName:        record.TheaterName,
+		IsCustomTheater:    record.IsCustomTheater,
 		City:               record.City,
 		AvailabilityStatus: record.AvailabilityStatus,
 		Genres:             mapPlayGenreRecords(genres),
+		CustomGenreName:    record.CustomGenreName,
 		CurationStatus:     record.CurationStatus,
 		CreatedByUserID:    record.CreatedByUserID,
 		ModeratedByUserID:  record.ModeratedByUserID,
@@ -3467,6 +3484,64 @@ func requiredSubmissionText(raw string, field string) (string, error) {
 	return trimmed, nil
 }
 
+const customGenreNameMaxLength = 80
+
+func normalizeCustomGenreName(raw *string) (*string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	if len(trimmed) > customGenreNameMaxLength {
+		return nil, sharederrors.Validation(fmt.Sprintf("customGenreName must be at most %d characters", customGenreNameMaxLength), nil)
+	}
+
+	return &trimmed, nil
+}
+
+func normalizeSubmissionGenreIDsAllowEmpty(rawIDs []string, allowEmpty bool) ([]string, error) {
+	if len(rawIDs) == 0 {
+		if allowEmpty {
+			return nil, nil
+		}
+		return nil, sharederrors.Validation("genreIds must include at least one genre", nil)
+	}
+
+	normalized := make([]string, 0, len(rawIDs))
+	seen := make(map[string]struct{}, len(rawIDs))
+
+	for _, rawID := range rawIDs {
+		genreID := strings.TrimSpace(rawID)
+		if genreID == "" {
+			return nil, sharederrors.Validation("genreIds must contain valid UUIDs", nil)
+		}
+
+		if !isValidUUID(genreID) {
+			return nil, sharederrors.Validation("genreIds must contain valid UUIDs", nil)
+		}
+
+		if _, exists := seen[genreID]; exists {
+			continue
+		}
+
+		seen[genreID] = struct{}{}
+		normalized = append(normalized, genreID)
+	}
+
+	if len(normalized) == 0 {
+		if allowEmpty {
+			return nil, nil
+		}
+		return nil, sharederrors.Validation("genreIds must include at least one genre", nil)
+	}
+
+	return normalized, nil
+}
+
 func normalizeSubmissionGenreIDs(rawIDs []string) ([]string, error) {
 	if len(rawIDs) == 0 {
 		return nil, sharederrors.Validation("genreIds must include at least one genre", nil)
@@ -3732,7 +3807,7 @@ func validateSubmissionPatch(req UpdateSubmissionRequest) (UpdateSubmissionParam
 	return patch, nil
 }
 
-func (s *Service) validateCityAndTheater(ctx context.Context, city *string, theaterName string) error {
+func (s *Service) validateCityAndTheater(ctx context.Context, city *string, theaterName string, isCustomTheater bool) error {
 	if city == nil || strings.TrimSpace(*city) == "" {
 		return nil
 	}
@@ -3744,6 +3819,10 @@ func (s *Service) validateCityAndTheater(ctx context.Context, city *string, thea
 	}
 	if !cityExists {
 		return sharederrors.Validation("city is not in the allowed list", nil)
+	}
+
+	if isCustomTheater {
+		return nil
 	}
 
 	theaterExists, err := s.repo.TheaterExistsInCity(ctx, normalizedCity, theaterName)
@@ -3775,7 +3854,7 @@ func (s *Service) loadEngagementState(ctx context.Context, userID string, playID
 		return EngagementStateData{}, sharederrors.Internal("failed to load engagement state", nil)
 	}
 
-	return EngagementStateData{PlayID: playID, Wishlist: state.Wishlist, Attended: state.Attended}, nil
+	return EngagementStateData{PlayID: playID, Wishlist: state.Wishlist, Attended: state.Attended, Favorited: state.Favorited}, nil
 }
 
 func (s *Service) listMyEngagementPlays(ctx context.Context, userID string, query ListMyEngagementsQuery, kind string, loadErrorMessage string) (MyEngagementPlayListData, error) {

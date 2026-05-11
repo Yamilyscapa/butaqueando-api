@@ -73,6 +73,7 @@ func RegisterRoutes(v1 *gin.RouterGroup, deps Dependencies) {
 	myEngagements.Use(middleware.RequireAccessToken(deps.AccessTokenParser))
 	myEngagements.GET("/bookmarks", handler.ListMyBookmarks)
 	myEngagements.GET("/watched", handler.ListMyWatched)
+	myEngagements.GET("/favorites", handler.ListMyFavorites)
 	myEngagements.GET("/reviews", handler.ListMyReviews)
 
 	mySubmissions := v1.Group("/me/submissions")

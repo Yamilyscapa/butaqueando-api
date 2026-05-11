@@ -239,6 +239,8 @@ func (r *Repository) GetPublishedPlayByID(ctx context.Context, playID string) (P
 			p.director,
 			p.duration_minutes,
 			p.theater_name,
+			p.is_custom_theater,
+			p.custom_genre_name,
 			p.city,
 			p.availability_status,
 			p.published_at,
@@ -259,11 +261,13 @@ func (r *Repository) GetPublishedPlayByID(ctx context.Context, playID string) (P
 		Director:           row.Director,
 		DurationMinutes:    row.DurationMinutes,
 		TheaterName:        row.TheaterName,
+		IsCustomTheater:    row.IsCustomTheater,
 		City:               row.City,
 		AvailabilityStatus: row.AvailabilityStatus,
 		PublishedAt:        row.PublishedAt,
 		AverageRating:      row.AverageRating,
 		ReviewCount:        row.ReviewCount,
+		CustomGenreName:    row.CustomGenreName,
 	}, nil
 }
 
@@ -800,6 +804,16 @@ func (r *Repository) SetEngagement(ctx context.Context, userID string, playID st
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&engagement).Error; err != nil {
 				return err
 			}
+		case "favorited":
+			engagement := userPlayEngagementEntity{
+				UserID:    userUUID,
+				PlayID:    playUUID,
+				Kind:      kind,
+				CreatedAt: createdAt,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&engagement).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -859,7 +873,16 @@ func (r *Repository) GetEngagementState(ctx context.Context, userID string, play
 		return EngagementStateRecord{}, err
 	}
 
-	return EngagementStateRecord{Wishlist: wishlistCount > 0, Attended: attendedCount > 0}, nil
+	var favoritedCount int64
+	err = r.db.WithContext(ctx).
+		Model(&userPlayEngagementEntity{}).
+		Where("user_id = ? AND play_id = ? AND kind = ?", userUUID, playUUID, "favorited").
+		Count(&favoritedCount).Error
+	if err != nil {
+		return EngagementStateRecord{}, err
+	}
+
+	return EngagementStateRecord{Wishlist: wishlistCount > 0, Attended: attendedCount > 0, Favorited: favoritedCount > 0}, nil
 }
 
 func (r *Repository) ListUserEngagementPlays(ctx context.Context, userID string, params ListUserEngagementPlaysParams) ([]EngagementPlayRecord, error) {
@@ -949,6 +972,8 @@ func (r *Repository) CreateSubmission(ctx context.Context, userID string, params
 		Director:           params.Director,
 		DurationMinutes:    params.DurationMinutes,
 		TheaterName:        params.TheaterName,
+		IsCustomTheater:    params.IsCustomTheater,
+		CustomGenreName:    params.CustomGenreName,
 		City:               params.City,
 		AvailabilityStatus: params.AvailabilityStatus,
 		CurationStatus:     "pending",
@@ -1346,6 +1371,8 @@ func (r *Repository) ListUserSubmissions(ctx context.Context, userID string, par
 			p.director,
 			p.duration_minutes,
 			p.theater_name,
+			p.is_custom_theater,
+			p.custom_genre_name,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -1459,6 +1486,8 @@ func (r *Repository) ListAdminSubmissions(ctx context.Context, params ListSubmis
 			p.director,
 			p.duration_minutes,
 			p.theater_name,
+			p.is_custom_theater,
+			p.custom_genre_name,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -2473,6 +2502,7 @@ func mapSubmissionRows(rows []submissionRow) []SubmissionRecord {
 			Director:           row.Director,
 			DurationMinutes:    row.DurationMinutes,
 			TheaterName:        row.TheaterName,
+			IsCustomTheater:    row.IsCustomTheater,
 			City:               row.City,
 			AvailabilityStatus: row.AvailabilityStatus,
 			CurationStatus:     row.CurationStatus,
@@ -2481,6 +2511,7 @@ func mapSubmissionRows(rows []submissionRow) []SubmissionRecord {
 			ModeratedAt:        row.ModeratedAt,
 			PublishedAt:        row.PublishedAt,
 			RejectedReason:     row.RejectedReason,
+			CustomGenreName:    row.CustomGenreName,
 			CreatedAt:          row.CreatedAt,
 			UpdatedAt:          row.UpdatedAt,
 		})
@@ -2543,6 +2574,8 @@ func (r *Repository) getSubmissionByUUID(ctx context.Context, playUUID uuid.UUID
 			p.director,
 			p.duration_minutes,
 			p.theater_name,
+			p.is_custom_theater,
+			p.custom_genre_name,
 			p.city,
 			p.availability_status,
 			p.curation_status,
@@ -2631,6 +2664,8 @@ type playDetailsRow struct {
 	Director           string    `gorm:"column:director"`
 	DurationMinutes    int       `gorm:"column:duration_minutes"`
 	TheaterName        string    `gorm:"column:theater_name"`
+	IsCustomTheater    bool      `gorm:"column:is_custom_theater"`
+	CustomGenreName    *string   `gorm:"column:custom_genre_name"`
 	City               *string   `gorm:"column:city"`
 	AvailabilityStatus string    `gorm:"column:availability_status"`
 	PublishedAt        time.Time `gorm:"column:published_at"`
@@ -2658,6 +2693,8 @@ type submissionRow struct {
 	Director           string     `gorm:"column:director"`
 	DurationMinutes    int        `gorm:"column:duration_minutes"`
 	TheaterName        string     `gorm:"column:theater_name"`
+	IsCustomTheater    bool       `gorm:"column:is_custom_theater"`
+	CustomGenreName    *string    `gorm:"column:custom_genre_name"`
 	City               *string    `gorm:"column:city"`
 	AvailabilityStatus string     `gorm:"column:availability_status"`
 	CurationStatus     string     `gorm:"column:curation_status"`
@@ -2835,6 +2872,8 @@ type playEntity struct {
 	Director           string     `gorm:"column:director"`
 	DurationMinutes    int        `gorm:"column:duration_minutes"`
 	TheaterName        string     `gorm:"column:theater_name"`
+	IsCustomTheater    bool       `gorm:"column:is_custom_theater"`
+	CustomGenreName    *string    `gorm:"column:custom_genre_name"`
 	City               *string    `gorm:"column:city"`
 	AvailabilityStatus string     `gorm:"column:availability_status"`
 	CurationStatus     string     `gorm:"column:curation_status"`

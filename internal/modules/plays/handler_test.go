@@ -32,6 +32,7 @@ type fakeService struct {
 	attachSubMediaFn            func(ctx context.Context, userID string, playID string, req AttachSubmissionMediaRequest) (PlayMediaData, error)
 	listMyBooksFn               func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	listMyWatchFn               func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
+	listMyFavFn                 func(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error)
 	listMyRevFn                 func(ctx context.Context, userID string, query ListUserReviewsQuery) (UserReviewListData, error)
 	listMySubsFn                func(ctx context.Context, userID string, query ListSubmissionsQuery) (SubmissionListData, error)
 	updateMySubFn               func(ctx context.Context, userID string, playID string, req UpdateSubmissionRequest) (SubmissionData, error)
@@ -195,6 +196,14 @@ func (f *fakeService) ListMyBookmarks(ctx context.Context, userID string, query 
 func (f *fakeService) ListMyWatched(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
 	if f.listMyWatchFn != nil {
 		return f.listMyWatchFn(ctx, userID, query)
+	}
+
+	return MyEngagementPlayListData{}, nil
+}
+
+func (f *fakeService) ListMyFavorites(ctx context.Context, userID string, query ListMyEngagementsQuery) (MyEngagementPlayListData, error) {
+	if f.listMyFavFn != nil {
+		return f.listMyFavFn(ctx, userID, query)
 	}
 
 	return MyEngagementPlayListData{}, nil

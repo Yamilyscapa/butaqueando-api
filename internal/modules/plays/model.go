@@ -106,9 +106,11 @@ type CreateSubmissionRequest struct {
 	Director           string   `json:"director"`
 	DurationMinutes    int      `json:"durationMinutes"`
 	TheaterName        string   `json:"theaterName"`
+	IsCustomTheater    bool     `json:"isCustomTheater"`
 	City               *string  `json:"city"`
 	AvailabilityStatus *string  `json:"availabilityStatus"`
 	GenreIDs           []string `json:"genreIds"`
+	CustomGenreName    *string  `json:"customGenreName"`
 }
 
 type CreateSubmissionMediaUploadRequest struct {
@@ -275,11 +277,13 @@ type PlayDetailsData struct {
 	Director           string               `json:"director"`
 	DurationMinutes    int                  `json:"durationMinutes"`
 	TheaterName        string               `json:"theaterName"`
+	IsCustomTheater    bool                 `json:"isCustomTheater"`
 	City               *string              `json:"city"`
 	AvailabilityStatus string               `json:"availabilityStatus"`
 	PublishedAt        string               `json:"publishedAt"`
 	Stats              PlayStatsData        `json:"stats"`
 	Genres             []PlayGenreData      `json:"genres"`
+	CustomGenreName    *string              `json:"customGenreName,omitempty"`
 	Cast               []PlayCastMemberData `json:"cast"`
 	Media              []PlayMediaData      `json:"media"`
 }
@@ -325,9 +329,11 @@ type SubmissionData struct {
 	Director           string          `json:"director"`
 	DurationMinutes    int             `json:"durationMinutes"`
 	TheaterName        string          `json:"theaterName"`
+	IsCustomTheater    bool            `json:"isCustomTheater"`
 	City               *string         `json:"city"`
 	AvailabilityStatus string          `json:"availabilityStatus"`
 	Genres             []PlayGenreData `json:"genres"`
+	CustomGenreName    *string         `json:"customGenreName,omitempty"`
 	Media              []PlayMediaData `json:"media,omitempty"`
 	CurationStatus     string          `json:"curationStatus"`
 	CreatedByUserID    string          `json:"createdByUserId"`
@@ -415,9 +421,10 @@ type ModerationQueueData struct {
 }
 
 type EngagementStateData struct {
-	PlayID   string `json:"playId"`
-	Wishlist bool   `json:"wishlist"`
-	Attended bool   `json:"attended"`
+	PlayID    string `json:"playId"`
+	Wishlist  bool   `json:"wishlist"`
+	Attended  bool   `json:"attended"`
+	Favorited bool   `json:"favorited"`
 }
 
 type MyEngagementPlayData struct {
@@ -497,11 +504,13 @@ type PlayDetailsRecord struct {
 	Director           string
 	DurationMinutes    int
 	TheaterName        string
+	IsCustomTheater    bool
 	City               *string
 	AvailabilityStatus string
 	PublishedAt        time.Time
 	AverageRating      *float64
 	ReviewCount        int64
+	CustomGenreName    *string
 }
 
 type PlayGenreRecord struct {
@@ -600,9 +609,11 @@ type CreateSubmissionParams struct {
 	Director           string
 	DurationMinutes    int
 	TheaterName        string
+	IsCustomTheater    bool
 	City               *string
 	AvailabilityStatus string
 	GenreIDs           []string
+	CustomGenreName    *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -710,6 +721,7 @@ type SubmissionRecord struct {
 	Director           string
 	DurationMinutes    int
 	TheaterName        string
+	IsCustomTheater    bool
 	City               *string
 	AvailabilityStatus string
 	CurationStatus     string
@@ -718,6 +730,7 @@ type SubmissionRecord struct {
 	ModeratedAt        *time.Time
 	PublishedAt        *time.Time
 	RejectedReason     *string
+	CustomGenreName    *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -799,8 +812,9 @@ type ReviewCommentStatusRecord struct {
 }
 
 type EngagementStateRecord struct {
-	Wishlist bool
-	Attended bool
+	Wishlist  bool
+	Attended  bool
+	Favorited bool
 }
 
 type playListCursor struct {

@@ -67,7 +67,7 @@ BEGIN
     WHERE t.typname = 'engagement_kind'
       AND n.nspname = 'app'
   ) THEN
-    CREATE TYPE app.engagement_kind AS ENUM ('attended', 'wishlist');
+    CREATE TYPE app.engagement_kind AS ENUM ('attended', 'wishlist', 'favorited');
   END IF;
 END
 $$;
