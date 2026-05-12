@@ -329,8 +329,8 @@ func (h *Handler) ListGenres(c *gin.Context) {
 		return
 	}
 
-	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
-	httpx.WriteDataWithETag(c, http.StatusOK, data)
+	httpx.ApplyCachePolicy(c, httpx.PrivateNoStore())
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListCities(c *gin.Context) {
@@ -346,8 +346,8 @@ func (h *Handler) ListCities(c *gin.Context) {
 		return
 	}
 
-	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
-	httpx.WriteDataWithETag(c, http.StatusOK, data)
+	httpx.ApplyCachePolicy(c, httpx.PrivateNoStore())
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListTheaters(c *gin.Context) {
@@ -363,8 +363,8 @@ func (h *Handler) ListTheaters(c *gin.Context) {
 		return
 	}
 
-	httpx.ApplyCachePolicy(c, httpx.PublicMaxAge(15*time.Minute))
-	httpx.WriteDataWithETag(c, http.StatusOK, data)
+	httpx.ApplyCachePolicy(c, httpx.PrivateNoStore())
+	httpx.WriteData(c, http.StatusOK, data)
 }
 
 func (h *Handler) ListMyBookmarks(c *gin.Context) {
