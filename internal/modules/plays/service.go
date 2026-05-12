@@ -1611,15 +1611,9 @@ func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreL
 		return GenreListData{}, err
 	}
 
-	rawCursor := strings.TrimSpace(query.Cursor)
-	cursor, err := decodeGenreListCursor(rawCursor)
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
 	if err != nil {
 		return GenreListData{}, sharederrors.Validation("invalid cursor", nil)
-	}
-
-	cacheKey := buildRefCacheKey(refGenresKeyPrefix, fmt.Sprintf("cursor=%s", rawCursor), fmt.Sprintf("limit=%d", limit))
-	if cached, err := getCachedJSON[GenreListData](ctx, s.cache, "ref:genres", cacheKey); err == nil {
-		return cached, nil
 	}
 
 	records, err := s.repo.ListGenres(ctx, ListGenresParams{After: cursor, Limit: limit + 1})
@@ -1627,16 +1621,7 @@ func (s *Service) ListGenres(ctx context.Context, query ListGenresQuery) (GenreL
 		return GenreListData{}, sharederrors.Internal("failed to load genres", nil)
 	}
 
-	data, err := buildGenreListData(records, limit)
-	if err != nil {
-		return GenreListData{}, err
-	}
-
-	if setErr := setCachedJSON(ctx, s.cache, "ref:genres", cacheKey, data, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
-		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
-	}
-
-	return data, nil
+	return buildGenreListData(records, limit)
 }
 
 func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityListData, error) {
@@ -1645,15 +1630,9 @@ func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityLi
 		return CityListData{}, err
 	}
 
-	rawCursor := strings.TrimSpace(query.Cursor)
-	cursor, err := decodeGenreListCursor(rawCursor)
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
 	if err != nil {
 		return CityListData{}, sharederrors.Validation("invalid cursor", nil)
-	}
-
-	cacheKey := buildRefCacheKey(refCitiesKeyPrefix, fmt.Sprintf("cursor=%s", rawCursor), fmt.Sprintf("limit=%d", limit))
-	if cached, err := getCachedJSON[CityListData](ctx, s.cache, "ref:cities", cacheKey); err == nil {
-		return cached, nil
 	}
 
 	records, err := s.repo.ListCities(ctx, ListCitiesParams{After: cursor, Limit: limit + 1})
@@ -1681,10 +1660,6 @@ func (s *Service) ListCities(ctx context.Context, query ListCitiesQuery) (CityLi
 		response.NextCursor = &nextCursor
 	}
 
-	if setErr := setCachedJSON(ctx, s.cache, "ref:cities", cacheKey, response, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
-		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
-	}
-
 	return response, nil
 }
 
@@ -1694,8 +1669,7 @@ func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (Th
 		return TheaterListData{}, err
 	}
 
-	rawCursor := strings.TrimSpace(query.Cursor)
-	cursor, err := decodeGenreListCursor(rawCursor)
+	cursor, err := decodeGenreListCursor(strings.TrimSpace(query.Cursor))
 	if err != nil {
 		return TheaterListData{}, sharederrors.Validation("invalid cursor", nil)
 	}
@@ -1707,15 +1681,6 @@ func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (Th
 			return TheaterListData{}, sharederrors.Validation("invalid cityId", nil)
 		}
 		cityID = &rawCityID
-	}
-
-	cacheKey := buildRefCacheKey(refTheatersKeyPrefix,
-		fmt.Sprintf("cityId=%s", rawCityID),
-		fmt.Sprintf("cursor=%s", rawCursor),
-		fmt.Sprintf("limit=%d", limit),
-	)
-	if cached, err := getCachedJSON[TheaterListData](ctx, s.cache, "ref:theaters", cacheKey); err == nil {
-		return cached, nil
 	}
 
 	records, err := s.repo.ListTheaters(ctx, ListTheatersParams{CityID: cityID, After: cursor, Limit: limit + 1})
@@ -1741,10 +1706,6 @@ func (s *Service) ListTheaters(ctx context.Context, query ListTheatersQuery) (Th
 			return TheaterListData{}, sharederrors.Internal("failed to build pagination cursor", nil)
 		}
 		response.NextCursor = &nextCursor
-	}
-
-	if setErr := setCachedJSON(ctx, s.cache, "ref:theaters", cacheKey, response, refCacheTTL); setErr != nil && !errors.Is(setErr, cache.ErrClientNotConfigured) {
-		log.Printf("ref cache set failed: key=%s err=%v", cacheKey, setErr)
 	}
 
 	return response, nil
