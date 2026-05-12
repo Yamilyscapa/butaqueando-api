@@ -820,58 +820,28 @@ func TestServiceFeedCachesMissWithSectionTTL(t *testing.T) {
 	}
 }
 
-func TestServiceListGenresUsesCacheHit(t *testing.T) {
+func TestServiceListGenresAlwaysHitsRepo(t *testing.T) {
 	t.Parallel()
-
-	cached := GenreListData{Items: []GenreData{{ID: "00000000-0000-0000-0000-000000000001", Name: "Drama"}}}
-	raw, err := json.Marshal(cached)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	cacheKey := buildRefCacheKey(refGenresKeyPrefix, "cursor=", "limit=20")
-	cacheClient := &fakeCache{values: map[string]string{cacheKey: string(raw)}}
 
 	repoCalls := 0
 	service := NewService(
 		&fakeRepository{listGenresFn: func(context.Context, ListGenresParams) ([]GenreRecord, error) {
 			repoCalls++
-			return nil, nil
-		}},
-		WithCache(cacheClient),
-	)
-
-	data, err := service.ListGenres(context.Background(), ListGenresQuery{})
-	if err != nil {
-		t.Fatalf("expected success: %v", err)
-	}
-	if len(data.Items) != 1 || data.Items[0].Name != "Drama" {
-		t.Fatalf("expected cached payload, got %+v", data)
-	}
-	if repoCalls != 0 {
-		t.Fatalf("expected repo not called on cache hit, got %d", repoCalls)
-	}
-}
-
-func TestServiceListGenresCachesMiss(t *testing.T) {
-	t.Parallel()
-
-	cacheClient := &fakeCache{values: map[string]string{}}
-	service := NewService(
-		&fakeRepository{listGenresFn: func(context.Context, ListGenresParams) ([]GenreRecord, error) {
 			return []GenreRecord{{ID: "00000000-0000-0000-0000-000000000001", Name: "Drama"}}, nil
 		}},
-		WithCache(cacheClient),
 	)
 
-	if _, err := service.ListGenres(context.Background(), ListGenresQuery{}); err != nil {
-		t.Fatalf("expected success: %v", err)
+	for i := 0; i < 2; i++ {
+		data, err := service.ListGenres(context.Background(), ListGenresQuery{})
+		if err != nil {
+			t.Fatalf("expected success: %v", err)
+		}
+		if len(data.Items) != 1 || data.Items[0].Name != "Drama" {
+			t.Fatalf("unexpected payload: %+v", data)
+		}
 	}
-	if cacheClient.setCalls != 1 {
-		t.Fatalf("expected one cache set, got %d", cacheClient.setCalls)
-	}
-	if cacheClient.setTTL != refCacheTTL {
-		t.Fatalf("expected ttl %s, got %s", refCacheTTL, cacheClient.setTTL)
+	if repoCalls != 2 {
+		t.Fatalf("expected repo called twice (no cache), got %d", repoCalls)
 	}
 }
 
