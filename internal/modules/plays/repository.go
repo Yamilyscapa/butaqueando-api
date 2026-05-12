@@ -1119,7 +1119,7 @@ func (r *Repository) ListGenres(ctx context.Context, params ListGenresParams) ([
 			g.name
 		`)
 
-	query, err := applyGenreListCursor(query, params.After)
+	query, err := applyNameIDListCursor(query, params.After, "g.name", "g.id")
 	if err != nil {
 		return nil, err
 	}
@@ -1182,7 +1182,7 @@ func (r *Repository) ListCities(ctx context.Context, params ListCitiesParams) ([
 		Select("c.id, c.name").
 		Where("c.is_active = true")
 
-	query, err := applyGenreListCursor(query, params.After)
+	query, err := applyNameIDListCursor(query, params.After, "c.name", "c.id")
 	if err != nil {
 		return nil, err
 	}
@@ -1218,7 +1218,7 @@ func (r *Repository) ListTheaters(ctx context.Context, params ListTheatersParams
 		query = query.Where("t.city_id = ?", cityUUID)
 	}
 
-	query, err := applyGenreListCursor(query, params.After)
+	query, err := applyNameIDListCursor(query, params.After, "t.name", "t.id")
 	if err != nil {
 		return nil, err
 	}
@@ -2456,26 +2456,26 @@ func applyPlayEditSuggestionListCursor(query *gorm.DB, after *playEditSuggestion
 	), nil
 }
 
-func applyGenreListCursor(query *gorm.DB, after *genreListCursor) (*gorm.DB, error) {
+func applyNameIDListCursor(query *gorm.DB, after *genreListCursor, nameCol, idCol string) (*gorm.DB, error) {
 	if after == nil {
 		return query, nil
 	}
 
-	genreUUID, err := parseUUID(after.GenreID)
+	rowUUID, err := parseUUID(after.GenreID)
 	if err != nil {
 		return nil, err
 	}
 
 	name := strings.TrimSpace(after.Name)
 	if name == "" {
-		return nil, fmt.Errorf("invalid genre cursor")
+		return nil, fmt.Errorf("invalid list cursor")
 	}
 
 	return query.Where(
-		"(g.name > ?) OR (g.name = ? AND g.id > ?)",
+		fmt.Sprintf("(%s > ?) OR (%s = ? AND %s > ?)", nameCol, nameCol, idCol),
 		name,
 		name,
-		genreUUID,
+		rowUUID,
 	), nil
 }
 
