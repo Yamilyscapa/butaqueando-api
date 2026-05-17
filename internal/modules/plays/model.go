@@ -79,17 +79,17 @@ type ListModerationQueueQuery struct {
 }
 
 type CreateReviewRequest struct {
-	Rating           int     `json:"rating"`
+	Rating           float64 `json:"rating"`
 	Title            *string `json:"title"`
 	Body             string  `json:"body"`
 	ContainsSpoilers *bool   `json:"containsSpoilers"`
 }
 
 type UpdateReviewRequest struct {
-	Rating           *int    `json:"rating"`
-	Title            *string `json:"title"`
-	Body             *string `json:"body"`
-	ContainsSpoilers *bool   `json:"containsSpoilers"`
+	Rating           *float64 `json:"rating"`
+	Title            *string  `json:"title"`
+	Body             *string  `json:"body"`
+	ContainsSpoilers *bool    `json:"containsSpoilers"`
 }
 
 type CreateReviewCommentRequest struct {
@@ -294,7 +294,7 @@ type ReviewData struct {
 	ID               string  `json:"id"`
 	UserID           string  `json:"userId"`
 	DisplayName      string  `json:"displayName"`
-	Rating           int     `json:"rating"`
+	Rating           float64 `json:"rating"`
 	Title            *string `json:"title"`
 	Body             string  `json:"body"`
 	ContainsSpoilers bool    `json:"containsSpoilers"`
@@ -461,7 +461,7 @@ type UserReviewPlayData struct {
 type UserReviewData struct {
 	ID               string             `json:"id"`
 	Play             UserReviewPlayData `json:"play"`
-	Rating           int                `json:"rating"`
+	Rating           float64            `json:"rating"`
 	Title            *string            `json:"title"`
 	Body             string             `json:"body"`
 	ContainsSpoilers bool               `json:"containsSpoilers"`
@@ -550,7 +550,7 @@ type ReviewRecord struct {
 	ID               string
 	UserID           string
 	DisplayName      string
-	Rating           int
+	Rating           float64
 	Title            *string
 	Body             string
 	ContainsSpoilers bool
@@ -567,7 +567,7 @@ type UserReviewRecord struct {
 	AvailabilityStatus string
 	PublishedAt        time.Time
 	PosterMediaID      *string
-	Rating             int
+	Rating             float64
 	Title              *string
 	Body               string
 	ContainsSpoilers   bool
@@ -576,7 +576,7 @@ type UserReviewRecord struct {
 }
 
 type CreateReviewParams struct {
-	Rating           int
+	Rating           float64
 	Title            *string
 	Body             string
 	ContainsSpoilers bool
@@ -585,7 +585,7 @@ type CreateReviewParams struct {
 }
 
 type UpdateReviewParams struct {
-	Rating           *int
+	Rating           *float64
 	Title            *string
 	TitleProvided    bool
 	Body             *string

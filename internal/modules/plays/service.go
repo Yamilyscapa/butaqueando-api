@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -672,8 +673,8 @@ func (s *Service) CreateReview(ctx context.Context, userID string, playID string
 	}
 
 	rating := req.Rating
-	if rating < 1 || rating > 5 {
-		return ReviewData{}, sharederrors.Validation("rating must be between 1 and 5", nil)
+	if !isValidHalfStarRating(rating) {
+		return ReviewData{}, sharederrors.Validation("rating must be between 1.0 and 5.0 in 0.5 steps", nil)
 	}
 
 	body := strings.TrimSpace(req.Body)
@@ -747,8 +748,8 @@ func (s *Service) UpdateReview(ctx context.Context, userID string, reviewID stri
 	updateParams := UpdateReviewParams{UpdatedAt: time.Now().UTC()}
 
 	if req.Rating != nil {
-		if *req.Rating < 1 || *req.Rating > 5 {
-			return ReviewData{}, sharederrors.Validation("rating must be between 1 and 5", nil)
+		if !isValidHalfStarRating(*req.Rating) {
+			return ReviewData{}, sharederrors.Validation("rating must be between 1.0 and 5.0 in 0.5 steps", nil)
 		}
 
 		updateParams.Rating = req.Rating
@@ -3905,6 +3906,14 @@ func isValidAuthUserID(raw string) bool {
 
 func hasReviewPatch(req UpdateReviewRequest) bool {
 	return req.Rating != nil || req.Title != nil || req.Body != nil || req.ContainsSpoilers != nil
+}
+
+func isValidHalfStarRating(rating float64) bool {
+	if math.IsNaN(rating) || rating < 1.0 || rating > 5.0 {
+		return false
+	}
+
+	return math.Mod(rating*2, 1) == 0
 }
 
 func sameUUID(left string, right string) bool {

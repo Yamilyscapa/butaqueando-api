@@ -2,7 +2,11 @@ CREATE TABLE IF NOT EXISTS app.reviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   play_id uuid NOT NULL REFERENCES app.plays(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  rating smallint NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  rating numeric(2,1) NOT NULL CHECK (
+    rating >= 1.0
+    AND rating <= 5.0
+    AND (rating * 2) = floor(rating * 2)
+  ),
   title text NULL,
   body text NOT NULL,
   contains_spoilers boolean NOT NULL DEFAULT false,

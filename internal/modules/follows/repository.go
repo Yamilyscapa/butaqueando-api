@@ -201,7 +201,7 @@ func (r *Repository) ListFollowingActivity(ctx context.Context, actorUserID stri
 				prs.avg_rating,
 				COALESCE(prs.review_count, 0) AS review_count,
 				NULL::uuid AS review_id,
-				NULL::smallint AS review_rating,
+				NULL::numeric AS review_rating,
 				NULL::text AS review_title,
 				NULL::text AS review_body,
 				NULL::boolean AS review_contains_spoilers,
@@ -285,7 +285,7 @@ func (r *Repository) ListFollowingActivity(ctx context.Context, actorUserID stri
 				prs.avg_rating,
 				COALESCE(prs.review_count, 0) AS review_count,
 				NULL::uuid AS review_id,
-				NULL::smallint AS review_rating,
+				NULL::numeric AS review_rating,
 				NULL::text AS review_title,
 				NULL::text AS review_body,
 				NULL::boolean AS review_contains_spoilers,
@@ -374,7 +374,7 @@ type followingActivityRow struct {
 	AverageRating          *float64   `gorm:"column:avg_rating"`
 	ReviewCount            int64      `gorm:"column:review_count"`
 	ReviewID               *uuid.UUID `gorm:"column:review_id"`
-	ReviewRating           *int16     `gorm:"column:review_rating"`
+	ReviewRating           *float64   `gorm:"column:review_rating"`
 	ReviewTitle            *string    `gorm:"column:review_title"`
 	ReviewBody             *string    `gorm:"column:review_body"`
 	ReviewContainsSpoilers *bool      `gorm:"column:review_contains_spoilers"`
@@ -423,7 +423,7 @@ func mapFollowingActivityRows(rows []followingActivityRow) []FollowingActivityRe
 		}
 
 		if row.ReviewRating != nil {
-			rating := int(*row.ReviewRating)
+			rating := *row.ReviewRating
 			record.Rating = &rating
 		}
 
