@@ -1253,7 +1253,7 @@ func TestServiceUpdateReviewSuccess(t *testing.T) {
 		},
 	})
 
-	rating := 4
+	rating := 4.0
 	body := "Edited"
 	data, err := service.UpdateReview(context.Background(), "00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000501", UpdateReviewRequest{Rating: &rating, Body: &body})
 	if err != nil {

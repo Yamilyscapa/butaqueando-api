@@ -150,7 +150,7 @@ func TestServiceListMyFollowingsActivityBuildsNextCursor(t *testing.T) {
 	reviewCreatedAt := now.Add(-time.Minute)
 	reviewUpdatedAt := now
 	reviewID := "00000000-0000-0000-0000-000000000801"
-	rating := 5
+	rating := 5.0
 
 	service := NewService(&fakeRepository{listActivityFn: func(ctx context.Context, actorUserID string, after *followingActivityCursor, limit int) ([]FollowingActivityRecord, error) {
 		if limit != 2 {

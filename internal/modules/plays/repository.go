@@ -463,7 +463,7 @@ func (r *Repository) ListPublishedReviews(ctx context.Context, params ListReview
 			ID:               row.ID.String(),
 			UserID:           row.UserID.String(),
 			DisplayName:      row.DisplayName,
-			Rating:           int(row.Rating),
+			Rating:           row.Rating,
 			Title:            row.Title,
 			Body:             row.Body,
 			ContainsSpoilers: row.ContainsSpoilers,
@@ -541,7 +541,7 @@ func (r *Repository) ListUserPublishedReviews(ctx context.Context, userID string
 			AvailabilityStatus: row.AvailabilityStatus,
 			PublishedAt:        row.PublishedAt,
 			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
-			Rating:             int(row.Rating),
+			Rating:             row.Rating,
 			Title:              row.Title,
 			Body:               row.Body,
 			ContainsSpoilers:   row.ContainsSpoilers,
@@ -571,7 +571,7 @@ func (r *Repository) CreateReview(ctx context.Context, userID string, playID str
 	entity := reviewEntity{
 		PlayID:           playUUID,
 		UserID:           userUUID,
-		Rating:           int16(params.Rating),
+		Rating:           params.Rating,
 		Title:            params.Title,
 		Body:             params.Body,
 		ContainsSpoilers: params.ContainsSpoilers,
@@ -632,7 +632,7 @@ func (r *Repository) UpdateReview(ctx context.Context, reviewID string, params U
 	}
 
 	if params.Rating != nil {
-		updates["rating"] = int16(*params.Rating)
+		updates["rating"] = *params.Rating
 	}
 
 	if params.TitleProvided {
@@ -2634,7 +2634,7 @@ func (r *Repository) getReviewByID(ctx context.Context, reviewID uuid.UUID) (Rev
 		ID:               row.ID.String(),
 		UserID:           row.UserID.String(),
 		DisplayName:      row.DisplayName,
-		Rating:           int(row.Rating),
+		Rating:           row.Rating,
 		Title:            row.Title,
 		Body:             row.Body,
 		ContainsSpoilers: row.ContainsSpoilers,
@@ -2811,7 +2811,7 @@ type reviewRow struct {
 	ID               uuid.UUID `gorm:"column:id"`
 	UserID           uuid.UUID `gorm:"column:user_id"`
 	DisplayName      string    `gorm:"column:display_name"`
-	Rating           int16     `gorm:"column:rating"`
+	Rating           float64   `gorm:"column:rating"`
 	Title            *string   `gorm:"column:title"`
 	Body             string    `gorm:"column:body"`
 	ContainsSpoilers bool      `gorm:"column:contains_spoilers"`
@@ -2828,7 +2828,7 @@ type userReviewRow struct {
 	AvailabilityStatus string     `gorm:"column:availability_status"`
 	PublishedAt        time.Time  `gorm:"column:published_at"`
 	PosterMediaID      *uuid.UUID `gorm:"column:poster_media_id"`
-	Rating             int16      `gorm:"column:rating"`
+	Rating             float64    `gorm:"column:rating"`
 	Title              *string    `gorm:"column:title"`
 	Body               string     `gorm:"column:body"`
 	ContainsSpoilers   bool       `gorm:"column:contains_spoilers"`
@@ -2865,7 +2865,7 @@ type reviewEntity struct {
 	ID               uuid.UUID `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
 	PlayID           uuid.UUID `gorm:"column:play_id;type:uuid"`
 	UserID           uuid.UUID `gorm:"column:user_id;type:uuid"`
-	Rating           int16     `gorm:"column:rating"`
+	Rating           float64   `gorm:"column:rating"`
 	Title            *string   `gorm:"column:title"`
 	Body             string    `gorm:"column:body"`
 	ContainsSpoilers bool      `gorm:"column:contains_spoilers"`

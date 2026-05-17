@@ -54,7 +54,7 @@ type FollowingActivityPlayData struct {
 
 type FollowingActivityReviewData struct {
 	ID               string  `json:"id"`
-	Rating           int     `json:"rating"`
+	Rating           float64 `json:"rating"`
 	Title            *string `json:"title"`
 	Body             string  `json:"body"`
 	ContainsSpoilers bool    `json:"containsSpoilers"`
@@ -100,7 +100,7 @@ type FollowingActivityRecord struct {
 	AverageRating      *float64
 	ReviewCount        int64
 	ReviewID           *string
-	Rating             *int
+	Rating             *float64
 	Title              *string
 	Body               *string
 	ContainsSpoilers   *bool
