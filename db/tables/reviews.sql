@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS app.reviews (
   user_id uuid NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
   rating smallint NOT NULL CHECK (rating BETWEEN 1 AND 5),
   title text NULL,
-  body text NOT NULL,
+  body text NULL DEFAULT '',
   contains_spoilers boolean NOT NULL DEFAULT false,
   status app.review_status NOT NULL DEFAULT 'published',
   created_at timestamptz NOT NULL DEFAULT now(),
