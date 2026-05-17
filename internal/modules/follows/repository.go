@@ -306,10 +306,40 @@ func (r *Repository) ListFollowingActivity(ctx context.Context, actorUserID stri
 			WHERE uf.follower_user_id = ?
 				AND p.curation_status = 'published'
 				AND p.published_at IS NOT NULL
+
+			UNION ALL
+
+			SELECT
+				uf.follower_user_id AS activity_id,
+				'followed_you' AS activity_type,
+				uf.created_at AS activity_at,
+				u.id AS actor_id,
+				u.display_name AS actor_display_name,
+				up.bio AS actor_bio,
+				NULL::uuid AS play_id,
+				NULL::text AS play_title,
+				NULL::text AS theater_name,
+				NULL::text AS city,
+				NULL::text AS availability_status,
+				NULL::timestamptz AS published_at,
+				NULL::uuid AS poster_media_id,
+				NULL::numeric AS avg_rating,
+				0::bigint AS review_count,
+				NULL::uuid AS review_id,
+				NULL::smallint AS review_rating,
+				NULL::text AS review_title,
+				NULL::text AS review_body,
+				NULL::boolean AS review_contains_spoilers,
+				NULL::timestamptz AS review_created_at,
+				NULL::timestamptz AS review_updated_at
+			FROM app.user_follows AS uf
+			JOIN app.users AS u ON u.id = uf.follower_user_id
+			LEFT JOIN app.user_profiles AS up ON up.user_id = u.id
+			WHERE uf.following_user_id = ?
 		) AS activity
 	`
 
-	args := []any{actorUUID, actorUUID, actorUUID}
+	args := []any{actorUUID, actorUUID, actorUUID, actorUUID}
 
 	if after != nil {
 		afterUUID, err := parseUUID(after.ActivityID)
@@ -364,12 +394,12 @@ type followingActivityRow struct {
 	ActorID                uuid.UUID  `gorm:"column:actor_id"`
 	ActorDisplayName       string     `gorm:"column:actor_display_name"`
 	ActorBio               *string    `gorm:"column:actor_bio"`
-	PlayID                 uuid.UUID  `gorm:"column:play_id"`
-	PlayTitle              string     `gorm:"column:play_title"`
-	TheaterName            string     `gorm:"column:theater_name"`
+	PlayID                 *uuid.UUID `gorm:"column:play_id"`
+	PlayTitle              *string    `gorm:"column:play_title"`
+	TheaterName            *string    `gorm:"column:theater_name"`
 	City                   *string    `gorm:"column:city"`
-	AvailabilityStatus     string     `gorm:"column:availability_status"`
-	PublishedAt            time.Time  `gorm:"column:published_at"`
+	AvailabilityStatus     *string    `gorm:"column:availability_status"`
+	PublishedAt            *time.Time `gorm:"column:published_at"`
 	PosterMediaID          *uuid.UUID `gorm:"column:poster_media_id"`
 	AverageRating          *float64   `gorm:"column:avg_rating"`
 	ReviewCount            int64      `gorm:"column:review_count"`
@@ -400,21 +430,32 @@ func mapFollowingActivityRows(rows []followingActivityRow) []FollowingActivityRe
 	records := make([]FollowingActivityRecord, 0, len(rows))
 	for _, row := range rows {
 		record := FollowingActivityRecord{
-			ActivityType:       strings.TrimSpace(row.ActivityType),
-			ActivityAt:         row.ActivityAt,
-			ActivityID:         row.ActivityID.String(),
-			ActorID:            row.ActorID.String(),
-			ActorDisplayName:   row.ActorDisplayName,
-			ActorBio:           row.ActorBio,
-			PlayID:             row.PlayID.String(),
-			PlayTitle:          row.PlayTitle,
-			TheaterName:        row.TheaterName,
-			City:               row.City,
-			AvailabilityStatus: row.AvailabilityStatus,
-			PublishedAt:        row.PublishedAt,
-			PosterMediaID:      nullableUUIDToString(row.PosterMediaID),
-			AverageRating:      row.AverageRating,
-			ReviewCount:        row.ReviewCount,
+			ActivityType:     strings.TrimSpace(row.ActivityType),
+			ActivityAt:       row.ActivityAt,
+			ActivityID:       row.ActivityID.String(),
+			ActorID:          row.ActorID.String(),
+			ActorDisplayName: row.ActorDisplayName,
+			ActorBio:         row.ActorBio,
+			City:             row.City,
+			PosterMediaID:    nullableUUIDToString(row.PosterMediaID),
+			AverageRating:    row.AverageRating,
+			ReviewCount:      row.ReviewCount,
+		}
+
+		if row.PlayID != nil {
+			record.PlayID = row.PlayID.String()
+		}
+		if row.PlayTitle != nil {
+			record.PlayTitle = *row.PlayTitle
+		}
+		if row.TheaterName != nil {
+			record.TheaterName = *row.TheaterName
+		}
+		if row.AvailabilityStatus != nil {
+			record.AvailabilityStatus = *row.AvailabilityStatus
+		}
+		if row.PublishedAt != nil {
+			record.PublishedAt = *row.PublishedAt
 		}
 
 		if row.ReviewID != nil {

@@ -67,7 +67,7 @@ type FollowingActivityItemData struct {
 	ActivityAt   string                       `json:"activityAt"`
 	ActivityID   string                       `json:"activityId"`
 	Actor        FollowingActivityActorData   `json:"actor"`
-	Play         FollowingActivityPlayData    `json:"play"`
+	Play         *FollowingActivityPlayData   `json:"play,omitempty"`
 	Review       *FollowingActivityReviewData `json:"review,omitempty"`
 }
 

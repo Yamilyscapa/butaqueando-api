@@ -219,7 +219,7 @@ func TestHandlerMyFollowingsActivitySuccess(t *testing.T) {
 				ID:          "00000000-0000-0000-0000-000000000101",
 				DisplayName: "Ana",
 			},
-			Play: FollowingActivityPlayData{
+			Play: &FollowingActivityPlayData{
 				ID:                 "00000000-0000-0000-0000-000000000201",
 				Title:              "Play One",
 				TheaterName:        "Main",

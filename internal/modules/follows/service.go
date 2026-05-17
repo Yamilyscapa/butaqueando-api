@@ -248,7 +248,10 @@ func buildFollowingActivityListData(records []FollowingActivityRecord, limit int
 				DisplayName: record.ActorDisplayName,
 				Bio:         record.ActorBio,
 			},
-			Play: FollowingActivityPlayData{
+		}
+
+		if record.PlayID != "" {
+			item.Play = &FollowingActivityPlayData{
 				ID:                 record.PlayID,
 				Title:              record.PlayTitle,
 				TheaterName:        record.TheaterName,
@@ -258,7 +261,7 @@ func buildFollowingActivityListData(records []FollowingActivityRecord, limit int
 				PosterURL:          buildPosterURL(record.PlayID, record.PosterMediaID),
 				AverageRating:      record.AverageRating,
 				ReviewCount:        record.ReviewCount,
-			},
+			}
 		}
 
 		if record.ReviewID != nil && record.Rating != nil && record.Body != nil && record.ContainsSpoilers != nil && record.ReviewCreatedAt != nil && record.ReviewUpdatedAt != nil {
