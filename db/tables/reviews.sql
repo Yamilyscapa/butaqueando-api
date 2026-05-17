@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS app.reviews (
     AND (rating * 2) = floor(rating * 2)
   ),
   title text NULL,
-  body text NOT NULL,
+  body text NULL DEFAULT '',
   contains_spoilers boolean NOT NULL DEFAULT false,
   status app.review_status NOT NULL DEFAULT 'published',
   created_at timestamptz NOT NULL DEFAULT now(),

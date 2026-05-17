@@ -678,9 +678,6 @@ func (s *Service) CreateReview(ctx context.Context, userID string, playID string
 	}
 
 	body := strings.TrimSpace(req.Body)
-	if body == "" {
-		return ReviewData{}, sharederrors.Validation("body must not be empty", nil)
-	}
 
 	var title *string
 	if req.Title != nil {
@@ -765,10 +762,6 @@ func (s *Service) UpdateReview(ctx context.Context, userID string, reviewID stri
 
 	if req.Body != nil {
 		trimmedBody := strings.TrimSpace(*req.Body)
-		if trimmedBody == "" {
-			return ReviewData{}, sharederrors.Validation("body must not be empty", nil)
-		}
-
 		updateParams.Body = &trimmedBody
 	}
 
